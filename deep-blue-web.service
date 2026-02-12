@@ -1,0 +1,15 @@
+[Unit]
+Description=Deep Blue Web - Forklift Safety System
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/enigma/deep_blue_web
+ExecStart=/home/enigma/yolo-env2/bin/python /home/enigma/deep_blue_web/app.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

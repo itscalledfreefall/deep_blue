@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+yolo-env*/
+
+# Model files (large binaries)
+*.onnx
+*.pt
+*.engine
+
+# Runtime config (contains saved ROI state)
+config.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log

@@ -1,0 +1,218 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0a0e17;
+    color: #e0e0e0;
+    min-height: 100vh;
+}
+
+/* Login Page */
+.login-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-card {
+    background: #141b2d;
+    border: 1px solid #1e3a5f;
+    border-radius: 12px;
+    padding: 40px;
+    width: 340px;
+    box-shadow: 0 8px 32px rgba(0,100,255,0.1);
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.login-header h1 {
+    color: #4da6ff;
+    font-size: 28px;
+    letter-spacing: 4px;
+}
+
+.login-header p {
+    color: #6b7b8d;
+    font-size: 13px;
+    margin-top: 6px;
+}
+
+.login-card input {
+    width: 100%;
+    padding: 12px 16px;
+    margin-bottom: 14px;
+    background: #0d1321;
+    border: 1px solid #1e3a5f;
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 15px;
+    outline: none;
+}
+
+.login-card input:focus {
+    border-color: #4da6ff;
+}
+
+.login-card button {
+    width: 100%;
+    padding: 12px;
+    background: #1a5cb0;
+    border: none;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    cursor: pointer;
+    margin-top: 6px;
+}
+
+.login-card button:hover {
+    background: #2470d4;
+}
+
+.error {
+    background: #3d1515;
+    border: 1px solid #6b2020;
+    color: #ff6b6b;
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    text-align: center;
+    font-size: 14px;
+}
+
+/* Dashboard */
+header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: #101828;
+    border-bottom: 1px solid #1e3a5f;
+}
+
+.header-left h1 {
+    color: #4da6ff;
+    font-size: 20px;
+    letter-spacing: 3px;
+    display: inline;
+}
+
+.subtitle {
+    color: #6b7b8d;
+    font-size: 12px;
+    margin-left: 12px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.stat {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: #141b2d;
+}
+
+.relay-off { color: #4caf50; }
+.relay-on { color: #fff; background: #c62828 !important; animation: pulse 1s infinite; }
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.btn-logout {
+    color: #6b7b8d;
+    text-decoration: none;
+    font-size: 13px;
+    padding: 4px 10px;
+    border: 1px solid #2a3a4d;
+    border-radius: 4px;
+}
+
+.btn-logout:hover { color: #ff6b6b; border-color: #6b2020; }
+
+main {
+    padding: 16px 20px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.stream-container {
+    position: relative;
+    width: 100%;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #1e3a5f;
+}
+
+.stream-container img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.stream-container canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+    display: none;
+}
+
+.controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+}
+
+.btn {
+    padding: 8px 18px;
+    border: 1px solid #2a3a4d;
+    border-radius: 6px;
+    background: #141b2d;
+    color: #e0e0e0;
+    font-size: 14px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.btn:hover { background: #1e2940; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+.btn-primary { background: #1a5cb0; border-color: #2470d4; color: #fff; }
+.btn-primary:hover { background: #2470d4; }
+.btn-primary.active { background: #e65100; border-color: #ff6d00; }
+
+.btn-success { background: #1b5e20; border-color: #2e7d32; color: #fff; }
+.btn-success:hover { background: #2e7d32; }
+
+.btn-danger { background: #4a1515; border-color: #6b2020; color: #ff6b6b; }
+.btn-danger:hover { background: #6b2020; color: #fff; }
+
+.hint {
+    margin-top: 10px;
+    color: #ff9800;
+    font-size: 13px;
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+    header { flex-direction: column; gap: 8px; }
+    .header-right { flex-wrap: wrap; justify-content: center; }
+    main { padding: 10px; }
+    .controls { justify-content: center; }
+}
