@@ -1,186 +1,234 @@
-// ROI Polygon Drawing for Deep Blue Dashboard
-(function() {
-    const stream = document.getElementById("stream");
-    const canvas = document.getElementById("roi-canvas");
-    const ctx = canvas.getContext("2d");
-    const container = document.getElementById("stream-container");
+/**
+ * Deep Blue — ROI Drawing + Status Poller
+ * Zero dependencies · Raspberry Pi optimized
+ */
+(function () {
+    'use strict';
 
-    const btnDraw = document.getElementById("btn-draw");
-    const btnUndo = document.getElementById("btn-undo");
-    const btnSave = document.getElementById("btn-save");
-    const btnClear = document.getElementById("btn-clear");
-    const hint = document.getElementById("draw-hint");
+    /* ── Config ─────────────────────────────── */
+    var VW = 640, VH = 480;       // camera resolution
+    var POLL_MS = 1500;           // status poll interval
+    var TOAST_MS = 2800;           // toast display duration
 
-    const statusFps = document.getElementById("status-fps");
-    const statusRelay = document.getElementById("status-relay");
+    /* ── DOM refs ───────────────────────────── */
+    var stream = document.getElementById('stream');
+    var canvas = document.getElementById('roi-canvas');
+    var ctx = canvas.getContext('2d');
+    var loader = document.getElementById('loader');
 
-    let drawing = false;
-    let vertices = [];
-    // Actual video resolution for coordinate mapping
-    const VIDEO_W = 640;
-    const VIDEO_H = 480;
+    var btnDraw = document.getElementById('btn-draw');
+    var btnUndo = document.getElementById('btn-undo');
+    var btnSave = document.getElementById('btn-save');
+    var btnClear = document.getElementById('btn-clear');
+    var hint = document.getElementById('draw-hint');
 
-    // Resize canvas to match displayed image
-    function resizeCanvas() {
-        canvas.width = stream.clientWidth;
-        canvas.height = stream.clientHeight;
-        drawVertices();
+    var elFps = document.getElementById('status-fps');
+    var elRelay = document.getElementById('status-relay');
+    var toastBox = document.getElementById('toast-wrap');
+
+    /* ── State ──────────────────────────────── */
+    var drawing = false;
+    var verts = [];      // [[x,y], …] in 640×480 space
+    var visible = true;
+
+    /* ── Toast ──────────────────────────────── */
+    function toast(msg, type) {
+        var el = document.createElement('div');
+        el.className = 'toast';
+        el.textContent = msg;
+        if (type === 'ok') el.style.borderColor = 'var(--green)';
+        if (type === 'err') el.style.borderColor = 'var(--red)';
+        toastBox.appendChild(el);
+        setTimeout(function () {
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(6px)';
+            setTimeout(function () { el.remove(); }, 300);
+        }, TOAST_MS);
     }
 
-    stream.addEventListener("load", resizeCanvas);
-    window.addEventListener("resize", resizeCanvas);
-    // Initial resize after stream starts
-    setTimeout(resizeCanvas, 1000);
+    /* ── Canvas sizing ─────────────────────── */
+    // Position canvas exactly over the rendered <img>
+    function syncCanvas() {
+        var sr = stream.getBoundingClientRect();
+        var pr = stream.parentElement.getBoundingClientRect();
+        if (sr.width < 2 || sr.height < 2) return;
 
-    // Convert click position to video coordinates (640x480)
-    function toVideoCoords(e) {
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = VIDEO_W / canvas.width;
-        const scaleY = VIDEO_H / canvas.height;
-        return [
-            Math.round((e.clientX - rect.left) * scaleX),
-            Math.round((e.clientY - rect.top) * scaleY)
-        ];
+        // Offset relative to parent (.stream-wrap)
+        var top = sr.top - pr.top;
+        var left = sr.left - pr.left;
+
+        canvas.width = sr.width;
+        canvas.height = sr.height;
+        canvas.style.width = sr.width + 'px';
+        canvas.style.height = sr.height + 'px';
+        canvas.style.top = top + 'px';
+        canvas.style.left = left + 'px';
+
+        render();
     }
 
-    // Convert video coordinates to canvas coordinates for drawing
-    function toCanvasCoords(pt) {
-        return [
-            pt[0] * canvas.width / VIDEO_W,
-            pt[1] * canvas.height / VIDEO_H
-        ];
+    /* ── Coordinate mapping ────────────────── */
+    function clickToVideo(e) {
+        var r = canvas.getBoundingClientRect();
+        var cx = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+        var cy = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+        var vx = Math.round(cx * VW / r.width);
+        var vy = Math.round(cy * VH / r.height);
+        return [Math.max(0, Math.min(VW, vx)),
+        Math.max(0, Math.min(VH, vy))];
     }
 
-    function drawVertices() {
+    function v2c(pt) {
+        return [pt[0] * canvas.width / VW,
+        pt[1] * canvas.height / VH];
+    }
+
+    /* ── Render polygon ────────────────────── */
+    function render() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (vertices.length === 0) return;
+        if (!verts.length) return;
 
-        // Draw filled polygon
-        if (vertices.length >= 3) {
-            ctx.beginPath();
-            let cp = toCanvasCoords(vertices[0]);
-            ctx.moveTo(cp[0], cp[1]);
-            for (let i = 1; i < vertices.length; i++) {
-                cp = toCanvasCoords(vertices[i]);
-                ctx.lineTo(cp[0], cp[1]);
-            }
+        // Polygon fill + stroke
+        ctx.beginPath();
+        var s = v2c(verts[0]);
+        ctx.moveTo(s[0], s[1]);
+        for (var i = 1; i < verts.length; i++) {
+            var p = v2c(verts[i]);
+            ctx.lineTo(p[0], p[1]);
+        }
+        if (verts.length >= 3) {
             ctx.closePath();
-            ctx.fillStyle = "rgba(0, 200, 0, 0.15)";
+            ctx.fillStyle = 'rgba(0, 229, 255, 0.12)';
             ctx.fill();
         }
-
-        // Draw lines
-        ctx.beginPath();
-        ctx.strokeStyle = "#00ff00";
+        ctx.strokeStyle = '#00e5ff';
         ctx.lineWidth = 2;
-        let cp = toCanvasCoords(vertices[0]);
-        ctx.moveTo(cp[0], cp[1]);
-        for (let i = 1; i < vertices.length; i++) {
-            cp = toCanvasCoords(vertices[i]);
-            ctx.lineTo(cp[0], cp[1]);
-        }
-        if (vertices.length >= 3) ctx.closePath();
         ctx.stroke();
 
-        // Draw vertex circles
-        vertices.forEach(function(v, i) {
-            const c = toCanvasCoords(v);
+        // Vertex dots
+        for (var j = 0; j < verts.length; j++) {
+            var c = v2c(verts[j]);
             ctx.beginPath();
-            ctx.arc(c[0], c[1], 5, 0, Math.PI * 2);
-            ctx.fillStyle = i === 0 ? "#ff9800" : "#00ff00";
+            ctx.arc(c[0], c[1], 4, 0, 6.283);
+            ctx.fillStyle = j === 0 ? '#ffb700' : '#fff';
             ctx.fill();
-            ctx.strokeStyle = "#fff";
-            ctx.lineWidth = 1;
-            ctx.stroke();
-        });
+        }
     }
 
-    // Toggle draw mode
-    btnDraw.addEventListener("click", function() {
-        drawing = !drawing;
-        if (drawing) {
-            canvas.style.display = "block";
-            btnDraw.textContent = "Stop Drawing";
-            btnDraw.classList.add("active");
-            hint.style.display = "block";
-            vertices = [];
-            drawVertices();
+    /* ── UI helpers ────────────────────────── */
+    function syncButtons() {
+        btnUndo.disabled = !drawing || verts.length === 0;
+        btnSave.disabled = !drawing || verts.length < 3;
+    }
+
+    function enterDraw(on) {
+        drawing = on;
+        if (on) {
+            btnDraw.textContent = '✕  Stop';
+            btnDraw.classList.add('active');
+            canvas.classList.add('drawing');
+            hint.style.display = 'block';
+            verts = [];
+            render();
         } else {
-            canvas.style.display = "none";
-            btnDraw.textContent = "Draw Zone";
-            btnDraw.classList.remove("active");
-            hint.style.display = "none";
+            btnDraw.textContent = '✎  Draw Zone';
+            btnDraw.classList.remove('active');
+            canvas.classList.remove('drawing');
+            hint.style.display = 'none';
         }
-        updateButtons();
-    });
+        syncButtons();
+    }
 
-    canvas.addEventListener("click", function(e) {
+    /* ── Events ────────────────────────────── */
+    btnDraw.addEventListener('click', function () { enterDraw(!drawing); });
+
+    canvas.addEventListener('click', function (e) {
         if (!drawing) return;
-        const pt = toVideoCoords(e);
-        vertices.push(pt);
-        drawVertices();
-        updateButtons();
+        verts.push(clickToVideo(e));
+        requestAnimationFrame(render);
+        syncButtons();
     });
 
-    btnUndo.addEventListener("click", function() {
-        vertices.pop();
-        drawVertices();
-        updateButtons();
+    btnUndo.addEventListener('click', function () {
+        verts.pop();
+        requestAnimationFrame(render);
+        syncButtons();
     });
 
-    btnSave.addEventListener("click", function() {
-        if (vertices.length < 3) return;
-        fetch("/api/roi", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({roi: vertices})
-        }).then(function(r) { return r.json(); }).then(function() {
-            drawing = false;
-            canvas.style.display = "none";
-            btnDraw.textContent = "Draw Zone";
-            btnDraw.classList.remove("active");
-            hint.style.display = "none";
-            vertices = [];
-            updateButtons();
-        });
+    btnClear.addEventListener('click', function () {
+        fetch('/api/roi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ roi: [] })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function () {
+                verts = [];
+                requestAnimationFrame(render);
+                if (drawing) enterDraw(false);
+                toast('Zone cleared', 'ok');
+            });
     });
 
-    btnClear.addEventListener("click", function() {
-        fetch("/api/roi", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({roi: []})
-        }).then(function(r) { return r.json(); }).then(function() {
-            vertices = [];
-            drawVertices();
-            updateButtons();
-        });
+    btnSave.addEventListener('click', function () {
+        if (verts.length < 3) return;
+        btnSave.disabled = true;
+        btnSave.textContent = 'Saving…';
+
+        fetch('/api/roi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ roi: verts })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function () {
+                toast('Zone saved', 'ok');
+                enterDraw(false);
+            })
+            .catch(function () {
+                toast('Save failed', 'err');
+            })
+            .then(function () {
+                btnSave.textContent = 'Save Zone';
+                syncButtons();
+            });
     });
 
-    function updateButtons() {
-        btnUndo.disabled = !drawing || vertices.length === 0;
-        btnSave.disabled = !drawing || vertices.length < 3;
+    /* ── Status polling ────────────────────── */
+    function poll() {
+        if (!visible) return;
+        fetch('/api/status')
+            .then(function (r) { return r.json(); })
+            .then(function (s) {
+                elFps.textContent = s.fps.toFixed(1);
+                if (s.relay === 'ON') {
+                    elRelay.textContent = '⚠ ALARM';
+                    elRelay.className = 'badge badge-danger';
+                } else {
+                    elRelay.textContent = 'CLEAR';
+                    elRelay.className = 'badge badge-safe';
+                }
+            })
+            .catch(function () { });
     }
 
-    // Load existing ROI on page load
-    fetch("/api/roi").then(function(r) { return r.json(); }).then(function(data) {
-        if (data.roi && data.roi.length >= 3) {
-            // Show saved ROI is rendered server-side on the video
-        }
+    /* ── Init ───────────────────────────────── */
+    // Hide loader once first MJPEG frame arrives
+    stream.addEventListener('load', function () {
+        loader.classList.add('hidden');
+        syncCanvas();
     });
 
-    // Poll status
-    function pollStatus() {
-        fetch("/api/status").then(function(r) { return r.json(); }).then(function(s) {
-            statusFps.textContent = s.fps + " FPS";
-            if (s.relay === "ON") {
-                statusRelay.textContent = "ALARM ON";
-                statusRelay.className = "stat relay-on";
-            } else {
-                statusRelay.textContent = "CLEAR";
-                statusRelay.className = "stat relay-off";
-            }
-        }).catch(function() {});
-    }
-    setInterval(pollStatus, 1000);
+    // Keep canvas aligned on resize
+    var ro = new ResizeObserver(function () { syncCanvas(); });
+    ro.observe(stream);
+
+    // Pause polling when tab hidden
+    document.addEventListener('visibilitychange', function () {
+        visible = document.visibilityState === 'visible';
+    });
+
+    // Kick off
+    setInterval(poll, POLL_MS);
+    setTimeout(syncCanvas, 800);       // fallback initial sync
 })();

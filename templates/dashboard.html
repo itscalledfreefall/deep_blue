@@ -1,42 +1,83 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deep Blue - Dashboard</title>
+    <title>Dashboard · Deep Blue</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
-<body class="dashboard-page">
-    <header>
-        <div class="header-left">
-            <h1>DEEP BLUE</h1>
-            <span class="subtitle">Forklift Safety System</span>
-        </div>
-        <div class="header-right">
-            <span id="status-fps" class="stat">-- FPS</span>
-            <span id="status-relay" class="stat relay-off">CLEAR</span>
-            <a href="/logout" class="btn-logout">Logout</a>
-        </div>
-    </header>
 
-    <main>
-        <div class="stream-container" id="stream-container">
-            <img id="stream" src="/video_feed" alt="Live Stream">
-            <canvas id="roi-canvas"></canvas>
-        </div>
+<body>
 
-        <div class="controls">
-            <button id="btn-draw" class="btn btn-primary">Draw Zone</button>
-            <button id="btn-undo" class="btn" disabled>Undo</button>
-            <button id="btn-save" class="btn btn-success" disabled>Save Zone</button>
-            <button id="btn-clear" class="btn btn-danger">Clear Zone</button>
-        </div>
+    <div class="dashboard">
+        <!-- ═══ Header ═══ -->
+        <header class="dash-header">
+            <div class="flex items-center">
+                <h1>Deep Blue</h1>
+                <span class="header-sub">Monitoring</span>
+            </div>
 
-        <div id="draw-hint" class="hint" style="display:none">
-            Click on the video to add polygon vertices. Click Save Zone when done.
-        </div>
-    </main>
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-lbl">FPS</span>
+                    <span class="status-val" id="status-fps">--</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-lbl">Status</span>
+                    <span class="badge badge-safe" id="status-relay">CLEAR</span>
+                </div>
+                <a href="/logout" class="btn-logout">Logout</a>
+            </div>
+        </header>
+
+        <!-- ═══ Main ═══ -->
+        <main class="dash-main">
+
+            <!-- Video Panel -->
+            <section class="video-panel" id="video-panel">
+                <div class="stream-wrap" id="stream-wrap">
+                    <img id="stream" src="/video_feed" alt="Live Feed">
+                    <canvas id="roi-canvas"></canvas>
+                </div>
+                <div class="loader-overlay" id="loader">
+                    <span class="loader-text">CONNECTING…</span>
+                </div>
+            </section>
+
+            <!-- Sidebar Controls -->
+            <aside class="sidebar">
+                <div class="control-group">
+                    <h3>Zone Config</h3>
+                    <p>Define the safety zone. Persons detected inside it trigger the alarm relay.</p>
+                    <button id="btn-draw" class="btn btn-draw w-full">✎ Draw Zone</button>
+                    <div class="btn-row">
+                        <button id="btn-undo" class="btn" disabled>Undo</button>
+                        <button id="btn-clear" class="btn btn-danger">Clear</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>Actions</h3>
+                    <button id="btn-save" class="btn btn-success w-full" disabled>Save Zone</button>
+                </div>
+
+                <div class="control-group" style="margin-top:auto">
+                    <div id="draw-hint" class="draw-hint">
+                        <strong>EDIT MODE</strong><br>
+                        Click on the video to place vertices.<br>
+                        Minimum 3 points required.
+                    </div>
+                </div>
+            </aside>
+
+        </main>
+    </div>
+
+    <!-- Toast container -->
+    <div id="toast-wrap" class="toast-wrap"></div>
 
     <script src="/static/roi.js"></script>
 </body>
+
 </html>

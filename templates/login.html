@@ -1,25 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deep Blue - Login</title>
+    <title>Login · Deep Blue</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
+
 <body class="login-page">
+
     <div class="login-card">
         <div class="login-header">
             <h1>DEEP BLUE</h1>
-            <p>Forklift Safety System</p>
+            <p>Safety System · Secure Access</p>
         </div>
+
         {% if error %}
-        <div class="error">{{ error }}</div>
+        <div class="error-msg" role="alert">{{ error }}</div>
         {% endif %}
+
         <form method="POST" action="/login">
-            <input type="text" name="username" placeholder="Username" required autofocus>
-            <input type="password" name="password" placeholder="Password" required>
-            <button type="submit">LOGIN</button>
+            <label class="label" for="username">Operator ID</label>
+            <input class="login-input" type="text" id="username" name="username" placeholder="Enter ID…" required
+                autofocus autocomplete="username">
+
+            <label class="label" for="password">Passcode</label>
+            <input class="login-input" type="password" id="password" name="password" placeholder="••••••••" required
+                autocomplete="current-password">
+
+            <button class="btn btn-primary login-submit" type="submit">
+                Authenticate
+            </button>
         </form>
+
+        <div class="login-footer">
+            System: <span class="online">ONLINE</span> · v2.4
+        </div>
     </div>
+
 </body>
+
 </html>

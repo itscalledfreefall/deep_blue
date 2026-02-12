@@ -32,10 +32,11 @@ CONF_THRESHOLD = 0.25
 CAM_WIDTH = 640
 CAM_HEIGHT = 480
 PERSON_CLASS = 0
+VEHICLE_CLASSES = {1: "bicycle", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
 RELAY_1_PIN = 23
 RELAY_2_PIN = 24
 TRIGGER_THRESHOLD = 2
-RELEASE_SECONDS = 1.5
+RELEASE_SECONDS = 3.0  # seconds after person leaves before relay OFF
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 SECRET_KEY = "deepblue-forklift-safety-2026"
@@ -52,7 +53,8 @@ annotated_frame = None     # frame with bounding boxes + ROI overlay (BGR for JP
 roi_polygon = []           # list of [x, y] points
 status = {
     "fps": 0.0,
-    "detections": 0,
+    "persons": 0,
+    "vehicles": 0,
     "relay": "OFF",
     "running": False,
 }
@@ -156,32 +158,44 @@ def detection_thread():
         t0 = time.time()
         current_roi = roi_polygon[:]
 
-        # Always run YOLO on the full frame for best detection
+        # Run YOLO on full frame
         results = model(frame, imgsz=IMGSZ, conf=CONF_THRESHOLD, verbose=False)
 
-        all_persons = [b for b in results[0].boxes if int(b.cls) == PERSON_CLASS]
+        # Separate persons and vehicles
+        all_persons = []
+        all_vehicles = []
+        for b in results[0].boxes:
+            cls_id = int(b.cls)
+            if cls_id == PERSON_CLASS:
+                all_persons.append(b)
+            elif cls_id in VEHICLE_CLASSES:
+                all_vehicles.append(b)
 
-        # Filter: only persons whose bbox center is inside the ROI polygon
-        if current_roi and len(current_roi) >= 3:
-            roi_contour = np.array(current_roi, dtype=np.int32)
-            persons_in_roi = []
-            persons_outside = []
-            for b in all_persons:
+        # Filter by ROI: only count detections whose bbox center is inside
+        def filter_by_roi(boxes, roi_contour):
+            inside, outside = [], []
+            for b in boxes:
                 x1, y1, x2, y2 = map(int, b.xyxy[0])
                 cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
                 if cv2.pointPolygonTest(roi_contour, (float(cx), float(cy)), False) >= 0:
-                    persons_in_roi.append(b)
+                    inside.append(b)
                 else:
-                    persons_outside.append(b)
+                    outside.append(b)
+            return inside, outside
+
+        if current_roi and len(current_roi) >= 3:
+            roi_contour = np.array(current_roi, dtype=np.int32)
+            persons_in_roi, persons_outside = filter_by_roi(all_persons, roi_contour)
+            vehicles_in_roi, vehicles_outside = filter_by_roi(all_vehicles, roi_contour)
         else:
-            # No ROI = full frame counts
-            persons_in_roi = all_persons
-            persons_outside = []
+            persons_in_roi, persons_outside = all_persons, []
+            vehicles_in_roi, vehicles_outside = all_vehicles, []
 
         elapsed = time.time() - t0
         fps = 1.0 / elapsed if elapsed > 0 else 0
         now = time.time()
 
+        # Relay logic: person in zone → trigger, person gone → hold then release
         if persons_in_roi:
             consecutive_detections += 1
             last_detection_time = now
@@ -203,7 +217,7 @@ def detection_thread():
             cv2.addWeighted(overlay, 0.2, display, 0.8, 0, display)
             cv2.polylines(display, [pts], True, (0, 255, 0), 2)
 
-        # Draw bounding boxes - red for in-ROI, gray for outside
+        # Draw person boxes - red in ROI, gray outside
         for box in persons_in_roi:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             conf = float(box.conf)
@@ -214,17 +228,31 @@ def detection_thread():
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             cv2.rectangle(display, (x1, y1), (x2, y2), (128, 128, 128), 1)
 
+        # Draw vehicle boxes - yellow in ROI, gray outside
+        for box in vehicles_in_roi:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            cls_id = int(box.cls)
+            conf = float(box.conf)
+            label = VEHICLE_CLASSES.get(cls_id, "vehicle").upper()
+            cv2.rectangle(display, (x1, y1), (x2, y2), (0, 220, 255), 2)
+            cv2.putText(display, f"{label} {conf:.0%}", (x1, y1 - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 220, 255), 2)
+        for box in vehicles_outside:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            cv2.rectangle(display, (x1, y1), (x2, y2), (128, 128, 128), 1)
+
         # Draw status bar
         relay_color = (0, 0, 255) if relay_active else (0, 200, 0)
         relay_text = "ALARM ON" if relay_active else "CLEAR"
-        cv2.putText(display, f"FPS: {fps:.1f} | {relay_text} | Persons: {len(persons_in_roi)}",
+        cv2.putText(display, f"FPS: {fps:.1f} | {relay_text} | P:{len(persons_in_roi)} V:{len(vehicles_in_roi)}",
                     (10, CAM_HEIGHT - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, relay_color, 2)
 
         with lock:
             annotated_frame = display
 
         status["fps"] = round(fps, 1)
-        status["detections"] = len(persons_in_roi)
+        status["persons"] = len(persons_in_roi)
+        status["vehicles"] = len(vehicles_in_roi)
 
     print("Detection stopped")
 
