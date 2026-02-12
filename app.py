@@ -12,6 +12,10 @@ import sys
 import threading
 import time
 
+# ONNX Runtime thread config (must be set before import)
+os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
+
 import cv2
 import numpy as np
 from flask import (Flask, Response, jsonify, redirect, render_template,
