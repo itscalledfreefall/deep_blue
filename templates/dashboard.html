@@ -25,7 +25,7 @@
                 </div>
                 <div class="status-item">
                     <span class="status-lbl">Status</span>
-                    <span class="badge badge-safe" id="status-relay">CLEAR</span>
+                    <span class="badge badge-danger" id="status-relay">RED</span>
                 </div>
                 <a href="/logout" class="btn-logout">Logout</a>
             </div>
@@ -47,19 +47,30 @@
 
             <!-- Sidebar Controls -->
             <aside class="sidebar">
-                <div class="control-group">
-                    <h3>Zone Config</h3>
-                    <p>Define the safety zone. Persons detected inside it trigger the alarm relay.</p>
-                    <button id="btn-draw" class="btn btn-draw w-full">✎ Draw Zone</button>
-                    <div class="btn-row">
-                        <button id="btn-undo" class="btn" disabled>Undo</button>
-                        <button id="btn-clear" class="btn btn-danger">Clear</button>
-                    </div>
+                <!-- Zone List -->
+                <div class="control-group" id="zone-list-panel">
+                    <h3>Zones</h3>
+                    <div id="zone-list" class="zone-list"></div>
+                    <button id="btn-add-zone" class="btn btn-primary w-full">+ Add Zone</button>
                 </div>
 
-                <div class="control-group">
-                    <h3>Actions</h3>
-                    <button id="btn-save" class="btn btn-success w-full" disabled>Save Zone</button>
+                <!-- Zone Editor (hidden by default) -->
+                <div class="control-group" id="zone-editor" style="display:none">
+                    <h3 id="editor-title">New Zone</h3>
+                    <label class="label">Name</label>
+                    <input id="zone-name" type="text" class="zone-input" placeholder="e.g. Loading Bay" maxlength="24">
+                    <label class="label">Type</label>
+                    <div id="zone-type-selector" class="zone-type-selector">
+                        <button type="button" class="zone-type-btn selected" data-type="human">Human</button>
+                        <button type="button" class="zone-type-btn" data-type="vehicle_road">Vehicle Road</button>
+                    </div>
+                    <label class="label">Color</label>
+                    <div id="color-swatches" class="color-swatches"></div>
+                    <div class="btn-row" style="margin-top:.5rem">
+                        <button id="btn-undo" class="btn" disabled>Undo</button>
+                        <button id="btn-cancel-zone" class="btn btn-danger">Cancel</button>
+                    </div>
+                    <button id="btn-save-zone" class="btn btn-success w-full" disabled>Save Zone</button>
                 </div>
 
                 <div class="control-group" style="margin-top:auto">

@@ -477,20 +477,29 @@ h3 {
 .stream-wrap {
     position: relative;
     width: 100%;
+    height: 100%;
     line-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
 }
 
 #stream {
     display: block;
-    width: 85%;
-    height: auto;
-    margin: 0 auto;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    margin: 0;
+    object-fit: contain;
 }
 
 #roi-canvas {
     position: absolute;
     /* JS will set top/left/width/height to match #stream exactly */
     pointer-events: none;
+    z-index: 2;
 }
 
 #roi-canvas.drawing {
@@ -555,6 +564,155 @@ h3 {
 
 .btn-row .btn {
     flex: 1;
+}
+
+/* ── Zone List ──── */
+.zone-list {
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+}
+
+.zone-item {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .45rem .6rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    font-size: .78rem;
+}
+
+.zone-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.zone-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.zone-btn-edit,
+.zone-btn-del {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: .9rem;
+    padding: 0 .2rem;
+    transition: color .15s;
+}
+
+.zone-btn-edit:hover {
+    color: var(--cyan);
+}
+
+.zone-btn-del:hover {
+    color: var(--red);
+}
+
+/* ── Zone Input ──── */
+.zone-input {
+    width: 100%;
+    padding: .5rem .6rem;
+    font: inherit;
+    font-size: .82rem;
+    color: #fff;
+    background: rgba(0, 0, 0, .35);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    transition: border-color .2s;
+}
+
+.zone-input:focus {
+    outline: none;
+    border-color: var(--cyan);
+}
+
+/* ── Color Swatches ──── */
+.color-swatches {
+    display: flex;
+    gap: .4rem;
+    flex-wrap: wrap;
+}
+
+.color-swatch {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: border-color .15s, transform .1s;
+}
+
+.color-swatch:hover {
+    transform: scale(1.15);
+}
+
+.color-swatch.selected {
+    border-color: #fff;
+    box-shadow: 0 0 8px rgba(255, 255, 255, .3);
+}
+
+/* ── Zone Type Selector ──── */
+.zone-type-selector {
+    display: flex;
+    gap: .35rem;
+    margin-bottom: .5rem;
+}
+
+.zone-type-btn {
+    flex: 1;
+    padding: .45rem .5rem;
+    font: inherit;
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-dim);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: color .15s, border-color .15s, background .15s;
+}
+
+.zone-type-btn:hover {
+    color: var(--text);
+    border-color: var(--cyan);
+}
+
+.zone-type-btn.selected {
+    color: var(--cyan);
+    border-color: var(--cyan);
+    background: var(--cyan-dim);
+}
+
+/* ── Zone Type Badges ──── */
+.zone-type-badge {
+    font-size: .58rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    padding: .1rem .35rem;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.zone-type-human {
+    color: var(--cyan);
+    background: var(--cyan-dim);
+}
+
+.zone-type-road {
+    color: var(--amber);
+    background: rgba(255, 183, 0, .12);
 }
 
 .draw-hint {
