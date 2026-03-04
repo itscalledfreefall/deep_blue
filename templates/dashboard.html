@@ -11,7 +11,12 @@
 <body>
 
     <div class="dashboard">
-        <!-- ═══ Header ═══ -->
+        <!-- Fault Banner -->
+        <div id="fault-banner" class="fault-banner" style="display:none">
+            <span id="fault-text"></span>
+        </div>
+
+        <!-- Header -->
         <header class="dash-header">
             <div class="flex items-center">
                 <h1>Deep Blue</h1>
@@ -20,18 +25,30 @@
 
             <div class="status-bar">
                 <div class="status-item">
+                    <span class="status-lbl">State</span>
+                    <span class="badge badge-state" id="status-state">IDLE</span>
+                </div>
+                <div class="status-item">
                     <span class="status-lbl">FPS</span>
                     <span class="status-val" id="status-fps">--</span>
                 </div>
                 <div class="status-item">
-                    <span class="status-lbl">Status</span>
-                    <span class="badge badge-danger" id="status-relay">RED</span>
+                    <span class="status-lbl">Relay</span>
+                    <span class="badge badge-danger" id="status-relay">SAFE</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-lbl">YOLO</span>
+                    <span class="badge badge-dim" id="status-yolo">SLEEP</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-lbl">WDG</span>
+                    <span class="badge badge-safe" id="status-watchdog">OK</span>
                 </div>
                 <a href="/logout" class="btn-logout">Logout</a>
             </div>
         </header>
 
-        <!-- ═══ Main ═══ -->
+        <!-- Main -->
         <main class="dash-main">
 
             <!-- Video Panel -->
@@ -50,6 +67,7 @@
                 <!-- Zone List -->
                 <div class="control-group" id="zone-list-panel">
                     <h3>Zones</h3>
+                    <div id="zone-warnings" class="zone-warnings"></div>
                     <div id="zone-list" class="zone-list"></div>
                     <button id="btn-add-zone" class="btn btn-primary w-full">+ Add Zone</button>
                 </div>
@@ -71,6 +89,35 @@
                         <button id="btn-cancel-zone" class="btn btn-danger">Cancel</button>
                     </div>
                     <button id="btn-save-zone" class="btn btn-success w-full" disabled>Save Zone</button>
+                </div>
+
+                <!-- Control Settings -->
+                <div class="control-group" id="settings-panel">
+                    <h3>
+                        <span id="settings-toggle" class="settings-toggle">Control Settings</span>
+                    </h3>
+                    <div id="settings-body" class="settings-body" style="display:none">
+                        <label class="label">Clearance delay (s)</label>
+                        <input id="cfg-clearance" type="number" class="zone-input" min="0" max="30" step="0.5">
+                        <label class="label">Ped. clear frames</label>
+                        <input id="cfg-ped-clear" type="number" class="zone-input" min="1" max="30" step="1">
+                        <label class="label">Passage duration (s)</label>
+                        <input id="cfg-passage" type="number" class="zone-input" min="1" max="120" step="0.5">
+                        <label class="label">Cooldown (s)</label>
+                        <input id="cfg-cooldown" type="number" class="zone-input" min="0.5" max="30" step="0.5">
+                        <label class="label">Motion consec. frames</label>
+                        <input id="cfg-motion-frames" type="number" class="zone-input" min="1" max="30" step="1">
+                        <label class="label">Motion pixel threshold</label>
+                        <input id="cfg-motion-thresh" type="number" class="zone-input" min="0.005" max="0.5" step="0.005">
+                        <label class="label">YOLO poll interval (ms)</label>
+                        <input id="cfg-yolo-poll" type="number" class="zone-input" min="50" max="5000" step="50">
+                        <label class="label">Watchdog pulse interval (ms)</label>
+                        <input id="cfg-wd-interval" type="number" class="zone-input" min="100" max="10000" step="100">
+                        <label class="label">Watchdog pulse width (ms)</label>
+                        <input id="cfg-wd-width" type="number" class="zone-input" min="10" max="5000" step="10">
+                        <button id="btn-save-settings" class="btn btn-success w-full" style="margin-top:.5rem">Save Settings</button>
+                        <div id="settings-feedback" class="settings-feedback"></div>
+                    </div>
                 </div>
 
                 <div class="control-group" style="margin-top:auto">

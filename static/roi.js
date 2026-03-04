@@ -1,5 +1,5 @@
 /**
- * Deep Blue — Multi-Zone Drawing + Status Poller
+ * Deep Blue — Multi-Zone Drawing + State Machine Status + Control Settings
  * Zero dependencies · Raspberry Pi optimized
  */
 (function () {
@@ -32,14 +32,35 @@
     var colorSwatchesEl = document.getElementById('color-swatches');
     var hint = document.getElementById('draw-hint');
     var zoneTypeBtns = document.querySelectorAll('.zone-type-btn');
+    var zoneWarningsEl = document.getElementById('zone-warnings');
 
     var elFps = document.getElementById('status-fps');
     var elRelay = document.getElementById('status-relay');
+    var elState = document.getElementById('status-state');
+    var elYolo = document.getElementById('status-yolo');
+    var elWatchdog = document.getElementById('status-watchdog');
+    var faultBanner = document.getElementById('fault-banner');
+    var faultText = document.getElementById('fault-text');
     var toastBox = document.getElementById('toast-wrap');
+
+    // Settings
+    var settingsToggle = document.getElementById('settings-toggle');
+    var settingsBody = document.getElementById('settings-body');
+    var btnSaveSettings = document.getElementById('btn-save-settings');
+    var settingsFeedback = document.getElementById('settings-feedback');
+    var cfgClearance = document.getElementById('cfg-clearance');
+    var cfgPedClear = document.getElementById('cfg-ped-clear');
+    var cfgPassage = document.getElementById('cfg-passage');
+    var cfgCooldown = document.getElementById('cfg-cooldown');
+    var cfgMotionFrames = document.getElementById('cfg-motion-frames');
+    var cfgMotionThresh = document.getElementById('cfg-motion-thresh');
+    var cfgYoloPoll = document.getElementById('cfg-yolo-poll');
+    var cfgWdInterval = document.getElementById('cfg-wd-interval');
+    var cfgWdWidth = document.getElementById('cfg-wd-width');
 
     /* ── State ──────────────────────────────── */
     var allZones = [];
-    var editingZoneId = null;   // null = new, string = editing existing
+    var editingZoneId = null;
     var drawVerts = [];
     var selectedColor = PRESET_COLORS[0];
     var selectedZoneType = 'human';
@@ -47,6 +68,7 @@
     var visible = true;
     var canvasDisplayWidth = 0;
     var canvasDisplayHeight = 0;
+    var settingsOpen = false;
 
     /* ── Toast ──────────────────────────────── */
     function toast(msg, type) {
@@ -81,14 +103,12 @@
     function getVisibleStreamRect() {
         var sr = stream.getBoundingClientRect();
         if (sr.width < 2 || sr.height < 2) return null;
-
         var videoW = stream.naturalWidth || VW;
         var videoH = stream.naturalHeight || VH;
         if (videoW < 1 || videoH < 1) {
             videoW = VW;
             videoH = VH;
         }
-
         var videoAspect = videoW / videoH;
         var boxAspect = sr.width / sr.height;
         var vr = {
@@ -97,7 +117,6 @@
             width: sr.width,
             height: sr.height
         };
-
         if (boxAspect > videoAspect) {
             vr.height = sr.height;
             vr.width = sr.height * videoAspect;
@@ -114,16 +133,13 @@
         var vr = getVisibleStreamRect();
         var pr = stream.parentElement.getBoundingClientRect();
         if (!vr || vr.width < 2 || vr.height < 2) return;
-
         var top = vr.top - pr.top;
         var left = vr.left - pr.left;
         var cw = Math.max(1, vr.width);
         var ch = Math.max(1, vr.height);
         var dpr = window.devicePixelRatio || 1;
-
         canvasDisplayWidth = cw;
         canvasDisplayHeight = ch;
-
         canvas.width = Math.max(1, Math.round(cw * dpr));
         canvas.height = Math.max(1, Math.round(ch * dpr));
         canvas.style.width = cw + 'px';
@@ -131,7 +147,6 @@
         canvas.style.top = top + 'px';
         canvas.style.left = left + 'px';
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
         render();
     }
 
@@ -154,7 +169,6 @@
     /* ── Draw a polygon on canvas ──────────── */
     function drawPolygon(points, color, alpha, showDots) {
         if (points.length === 0) return;
-
         ctx.beginPath();
         var s = v2c(points[0]);
         ctx.moveTo(s[0], s[1]);
@@ -167,14 +181,12 @@
             ctx.fillStyle = hexToRgba(color, alpha);
             ctx.fill();
         }
-        // Two-pass stroke improves edge visibility on bright/dark backgrounds.
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
         ctx.lineWidth = 4;
         ctx.stroke();
         ctx.strokeStyle = color;
         ctx.lineWidth = 2.5;
         ctx.stroke();
-
         if (showDots) {
             for (var j = 0; j < points.length; j++) {
                 var c = v2c(points[j]);
@@ -190,8 +202,6 @@
     function render() {
         if (canvasDisplayWidth < 2 || canvasDisplayHeight < 2) return;
         ctx.clearRect(0, 0, canvasDisplayWidth, canvasDisplayHeight);
-
-        // Draw saved zones (skip the one being edited)
         if (editorOpen) {
             for (var i = 0; i < allZones.length; i++) {
                 var z = allZones[i];
@@ -200,8 +210,6 @@
                 drawPolygon(z.points, z.color, 0.22, false);
             }
         }
-
-        // Draw current drawing vertices
         if (editorOpen && drawVerts.length > 0) {
             drawPolygon(drawVerts, selectedColor, 0.30, true);
         }
@@ -221,9 +229,13 @@
                 var isRoad = zone.zone_type === 'vehicle_road';
                 var badgeClass = isRoad ? 'zone-type-badge zone-type-road' : 'zone-type-badge zone-type-human';
                 var badgeText = isRoad ? 'ROAD' : 'HUMAN';
+                var pixelSpan = isRoad
+                    ? '<span class="zone-pixel-pct" data-zone-id="' + zone.id + '">--%</span>'
+                    : '';
                 item.innerHTML =
                     '<span class="zone-swatch" style="background:' + zone.color + '"></span>' +
                     '<span class="zone-name">' + escapeHtml(zone.name) + '</span>' +
+                    pixelSpan +
                     '<span class="' + badgeClass + '">' + badgeText + '</span>' +
                     '<button class="zone-btn-edit" title="Edit">&#9998;</button>' +
                     '<button class="zone-btn-del" title="Delete">&times;</button>';
@@ -231,6 +243,51 @@
                 item.querySelector('.zone-btn-del').addEventListener('click', function () { deleteZone(zone.id); });
                 zoneListEl.appendChild(item);
             })(allZones[i]);
+        }
+        updateZoneWarnings();
+    }
+
+    function updateZonePixelPcts(pcts) {
+        if (!pcts) return;
+        var spans = zoneListEl.querySelectorAll('.zone-pixel-pct');
+        for (var i = 0; i < spans.length; i++) {
+            var zid = spans[i].getAttribute('data-zone-id');
+            if (zid && pcts[zid] !== undefined) {
+                spans[i].textContent = pcts[zid].toFixed(1) + '%';
+            } else {
+                spans[i].textContent = '--%';
+            }
+        }
+    }
+
+    function updateZoneWarnings() {
+        var hasHuman = false;
+        var hasRoad = false;
+        for (var i = 0; i < allZones.length; i++) {
+            if (allZones[i].zone_type === 'human') hasHuman = true;
+            if (allZones[i].zone_type === 'vehicle_road') hasRoad = true;
+        }
+        var warnings = [];
+        if (!hasRoad && allZones.length > 0) {
+            warnings.push('No vehicle road zone — motion trigger disabled.');
+        }
+        if (!hasHuman && allZones.length > 0) {
+            warnings.push('No human zone — passage grant blocked (unsafe).');
+        }
+        if (allZones.length === 0) {
+            warnings.push('Add at least one human zone and one vehicle road zone.');
+        }
+        if (warnings.length > 0) {
+            zoneWarningsEl.innerHTML = '';
+            for (var w = 0; w < warnings.length; w++) {
+                var el = document.createElement('div');
+                el.className = 'zone-warning';
+                el.textContent = warnings[w];
+                zoneWarningsEl.appendChild(el);
+            }
+            zoneWarningsEl.style.display = '';
+        } else {
+            zoneWarningsEl.style.display = 'none';
         }
     }
 
@@ -276,7 +333,6 @@
                 btn.classList.remove('selected');
             }
         }
-        // Update hint text based on type
         if (type === 'vehicle_road') {
             hint.innerHTML = '<strong>EDIT MODE</strong><br>Draw a vehicle road zone.<br>Motion detection (camera-based) will be used.';
         } else {
@@ -367,15 +423,12 @@
     function saveCurrentZone() {
         var name = zoneNameInput.value.trim() || 'Unnamed';
         if (drawVerts.length < 3) return;
-
         btnSaveZone.disabled = true;
         btnSaveZone.textContent = 'Saving…';
-
         var done = function () {
             btnSaveZone.textContent = 'Save Zone';
             syncButtons();
         };
-
         if (editingZoneId) {
             fetch('/api/zones/' + editingZoneId, {
                 method: 'PUT',
@@ -411,6 +464,84 @@
         }
     }
 
+    /* ── Settings panel ───────────────────── */
+    settingsToggle.addEventListener('click', function () {
+        settingsOpen = !settingsOpen;
+        settingsBody.style.display = settingsOpen ? '' : 'none';
+        if (settingsOpen) loadSettings();
+    });
+
+    function loadSettings() {
+        fetch('/api/control-config')
+            .then(function (r) { return r.json(); })
+            .then(function (cfg) {
+                cfgClearance.value = cfg.clearance_seconds;
+                cfgPedClear.value = cfg.pedestrian_clear_consecutive_frames;
+                cfgPassage.value = cfg.passage_seconds;
+                cfgCooldown.value = cfg.cooldown_seconds;
+                cfgMotionFrames.value = cfg.motion_consecutive_frames;
+                cfgMotionThresh.value = cfg.motion_pixel_threshold;
+                cfgYoloPoll.value = cfg.yolo_poll_interval_ms;
+                cfgWdInterval.value = cfg.watchdog_pulse_interval_ms;
+                cfgWdWidth.value = cfg.watchdog_pulse_width_ms;
+                settingsFeedback.textContent = '';
+            })
+            .catch(function () {
+                settingsFeedback.textContent = 'Failed to load settings.';
+                settingsFeedback.className = 'settings-feedback err';
+            });
+    }
+
+    btnSaveSettings.addEventListener('click', function () {
+        var payload = {
+            clearance_seconds: parseFloat(cfgClearance.value),
+            pedestrian_clear_consecutive_frames: parseInt(cfgPedClear.value, 10),
+            passage_seconds: parseFloat(cfgPassage.value),
+            cooldown_seconds: parseFloat(cfgCooldown.value),
+            motion_consecutive_frames: parseInt(cfgMotionFrames.value, 10),
+            motion_pixel_threshold: parseFloat(cfgMotionThresh.value),
+            yolo_poll_interval_ms: parseInt(cfgYoloPoll.value, 10),
+            watchdog_pulse_interval_ms: parseInt(cfgWdInterval.value, 10),
+            watchdog_pulse_width_ms: parseInt(cfgWdWidth.value, 10)
+        };
+        // Client-side NaN check
+        for (var k in payload) {
+            if (isNaN(payload[k])) {
+                settingsFeedback.textContent = 'Invalid value for ' + k;
+                settingsFeedback.className = 'settings-feedback err';
+                return;
+            }
+        }
+        btnSaveSettings.disabled = true;
+        btnSaveSettings.textContent = 'Saving…';
+        fetch('/api/control-config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.ok) {
+                    settingsFeedback.textContent = 'Saved.';
+                    settingsFeedback.className = 'settings-feedback ok';
+                    toast('Settings saved', 'ok');
+                } else {
+                    var msg = (data.errors || []).join('; ') || 'Validation failed';
+                    settingsFeedback.textContent = msg;
+                    settingsFeedback.className = 'settings-feedback err';
+                    toast('Settings rejected', 'err');
+                }
+            })
+            .catch(function () {
+                settingsFeedback.textContent = 'Network error.';
+                settingsFeedback.className = 'settings-feedback err';
+            })
+            .then(function () {
+                btnSaveSettings.disabled = false;
+                btnSaveSettings.textContent = 'Save Settings';
+            });
+    });
+
     /* ── Events ────────────────────────────── */
     btnAddZone.addEventListener('click', startAddZone);
 
@@ -433,23 +564,77 @@
 
     btnSaveZone.addEventListener('click', saveCurrentZone);
 
+    /* ── State display helpers ────────────── */
+    var STATE_LABELS = {
+        'IDLE_SAFE': 'IDLE',
+        'ROAD_MOTION_TRIGGERED': 'MOTION',
+        'CLEARANCE_WAIT': 'CLEARING',
+        'PEDESTRIAN_HOLD': 'PED HOLD',
+        'TRAFFIC_PASSAGE_GRANTED': 'PASSAGE',
+        'RECOVERY_COOLDOWN': 'COOLDOWN',
+        'FAULT_SAFE': 'FAULT'
+    };
+
+    var STATE_BADGE_CLASS = {
+        'IDLE_SAFE': 'badge badge-dim',
+        'ROAD_MOTION_TRIGGERED': 'badge badge-amber',
+        'CLEARANCE_WAIT': 'badge badge-amber',
+        'PEDESTRIAN_HOLD': 'badge badge-danger',
+        'TRAFFIC_PASSAGE_GRANTED': 'badge badge-safe',
+        'RECOVERY_COOLDOWN': 'badge badge-dim',
+        'FAULT_SAFE': 'badge badge-fault'
+    };
+
     /* ── Status polling ────────────────────── */
     function poll() {
         if (!visible) return;
         fetch('/api/status')
             .then(function (r) { return r.json(); })
             .then(function (s) {
-                var fpsText = s.fps.toFixed(1);
-                if (s.motion_zones > 0) {
-                    fpsText += ' | M:' + s.motion_zones;
-                }
-                elFps.textContent = fpsText;
+                // FPS
+                elFps.textContent = s.fps.toFixed(1);
+
+                // Relay
                 if (s.relay === 'ON') {
-                    elRelay.textContent = 'GREEN';
+                    elRelay.textContent = 'PASS';
                     elRelay.className = 'badge badge-safe';
                 } else {
-                    elRelay.textContent = 'RED';
+                    elRelay.textContent = 'SAFE';
                     elRelay.className = 'badge badge-danger';
+                }
+
+                // Control state
+                var stateKey = s.control_state || 'IDLE_SAFE';
+                elState.textContent = STATE_LABELS[stateKey] || stateKey;
+                elState.className = STATE_BADGE_CLASS[stateKey] || 'badge badge-dim';
+
+                // YOLO mode
+                if (s.yolo_mode === 'active') {
+                    elYolo.textContent = 'ACTIVE';
+                    elYolo.className = 'badge badge-safe';
+                } else {
+                    elYolo.textContent = 'SLEEP';
+                    elYolo.className = 'badge badge-dim';
+                }
+
+                // Watchdog
+                if (s.watchdog_ok) {
+                    elWatchdog.textContent = 'OK';
+                    elWatchdog.className = 'badge badge-safe';
+                } else {
+                    elWatchdog.textContent = 'FAIL';
+                    elWatchdog.className = 'badge badge-fault';
+                }
+
+                // Live pixel %
+                updateZonePixelPcts(s.zone_pixel_pcts);
+
+                // Fault banner
+                if (s.fault_active && s.fault_reason) {
+                    faultText.textContent = 'FAULT: ' + s.fault_reason.replace(/_/g, ' ').toUpperCase();
+                    faultBanner.style.display = '';
+                } else {
+                    faultBanner.style.display = 'none';
                 }
             })
             .catch(function () { });
@@ -470,7 +655,6 @@
         visible = document.visibilityState === 'visible';
     });
 
-    // Load zones and start polling
     loadZones();
     setInterval(poll, POLL_MS);
     setTimeout(syncCanvas, 800);
