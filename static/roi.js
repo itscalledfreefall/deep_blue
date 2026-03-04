@@ -48,15 +48,9 @@
     var settingsBody = document.getElementById('settings-body');
     var btnSaveSettings = document.getElementById('btn-save-settings');
     var settingsFeedback = document.getElementById('settings-feedback');
-    var cfgClearance = document.getElementById('cfg-clearance');
-    var cfgPedClear = document.getElementById('cfg-ped-clear');
-    var cfgPassage = document.getElementById('cfg-passage');
-    var cfgCooldown = document.getElementById('cfg-cooldown');
-    var cfgMotionFrames = document.getElementById('cfg-motion-frames');
-    var cfgMotionThresh = document.getElementById('cfg-motion-thresh');
-    var cfgYoloPoll = document.getElementById('cfg-yolo-poll');
+    var cfgMotionMin = document.getElementById('cfg-motion-min');
+    var cfgMotionMax = document.getElementById('cfg-motion-max');
     var cfgWdInterval = document.getElementById('cfg-wd-interval');
-    var cfgWdWidth = document.getElementById('cfg-wd-width');
 
     /* ── State ──────────────────────────────── */
     var allZones = [];
@@ -475,15 +469,9 @@
         fetch('/api/control-config')
             .then(function (r) { return r.json(); })
             .then(function (cfg) {
-                cfgClearance.value = cfg.clearance_seconds;
-                cfgPedClear.value = cfg.pedestrian_clear_consecutive_frames;
-                cfgPassage.value = cfg.passage_seconds;
-                cfgCooldown.value = cfg.cooldown_seconds;
-                cfgMotionFrames.value = cfg.motion_consecutive_frames;
-                cfgMotionThresh.value = cfg.motion_pixel_threshold;
-                cfgYoloPoll.value = cfg.yolo_poll_interval_ms;
-                cfgWdInterval.value = cfg.watchdog_pulse_interval_ms;
-                cfgWdWidth.value = cfg.watchdog_pulse_width_ms;
+                cfgMotionMin.value = (cfg.motion_pixel_threshold_min * 100).toFixed(1);
+                cfgMotionMax.value = (cfg.motion_pixel_threshold_max * 100).toFixed(0);
+                cfgWdInterval.value = (cfg.watchdog_pulse_interval_ms / 1000).toFixed(1);
                 settingsFeedback.textContent = '';
             })
             .catch(function () {
@@ -493,25 +481,34 @@
     }
 
     btnSaveSettings.addEventListener('click', function () {
-        var payload = {
-            clearance_seconds: parseFloat(cfgClearance.value),
-            pedestrian_clear_consecutive_frames: parseInt(cfgPedClear.value, 10),
-            passage_seconds: parseFloat(cfgPassage.value),
-            cooldown_seconds: parseFloat(cfgCooldown.value),
-            motion_consecutive_frames: parseInt(cfgMotionFrames.value, 10),
-            motion_pixel_threshold: parseFloat(cfgMotionThresh.value),
-            yolo_poll_interval_ms: parseInt(cfgYoloPoll.value, 10),
-            watchdog_pulse_interval_ms: parseInt(cfgWdInterval.value, 10),
-            watchdog_pulse_width_ms: parseInt(cfgWdWidth.value, 10)
-        };
-        // Client-side NaN check
-        for (var k in payload) {
-            if (isNaN(payload[k])) {
-                settingsFeedback.textContent = 'Invalid value for ' + k;
-                settingsFeedback.className = 'settings-feedback err';
-                return;
-            }
+        var minPct = parseFloat(cfgMotionMin.value);
+        var maxPct = parseFloat(cfgMotionMax.value);
+        var wdSec = parseFloat(cfgWdInterval.value);
+        if (isNaN(minPct) || minPct < 0.5 || minPct > 50) {
+            settingsFeedback.textContent = 'Motion min must be 0.5–50%';
+            settingsFeedback.className = 'settings-feedback err';
+            return;
         }
+        if (isNaN(maxPct) || maxPct < 1 || maxPct > 100) {
+            settingsFeedback.textContent = 'Motion max must be 1–100%';
+            settingsFeedback.className = 'settings-feedback err';
+            return;
+        }
+        if (minPct >= maxPct) {
+            settingsFeedback.textContent = 'Min must be less than max';
+            settingsFeedback.className = 'settings-feedback err';
+            return;
+        }
+        if (isNaN(wdSec) || wdSec < 0.1 || wdSec > 600) {
+            settingsFeedback.textContent = 'Watchdog interval must be 0.1–600 seconds';
+            settingsFeedback.className = 'settings-feedback err';
+            return;
+        }
+        var payload = {
+            motion_pixel_threshold_min: minPct / 100,
+            motion_pixel_threshold_max: maxPct / 100,
+            watchdog_pulse_interval_ms: Math.round(wdSec * 1000)
+        };
         btnSaveSettings.disabled = true;
         btnSaveSettings.textContent = 'Saving…';
         fetch('/api/control-config', {

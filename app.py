@@ -13,9 +13,10 @@ import sys
 import threading
 import time
 
-# ONNX Runtime thread config (must be set before import)
-os.environ["OMP_NUM_THREADS"] = "2"
-os.environ["OMP_WAIT_POLICY"] = "PASSIVE"
+# ONNX/NCNN thread config (must be set before import)
+# Pi 4 has 4 Cortex-A72 cores — use 3 for inference, keep 1 for camera+Flask
+os.environ["OMP_NUM_THREADS"] = "3"
+os.environ["OMP_WAIT_POLICY"] = "ACTIVE"
 
 import cv2
 import numpy as np
@@ -107,7 +108,7 @@ CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.j
 SECRET_KEY = "deepblue-forklift-safety-2026"
 USERNAME = "deepblue"
 PASSWORD = "matrix18"
-DEFAULT_ZONE_COLOR = "#00e5ff"
+DEFAULT_ZONE_COLOR = "#e5e5e5"
 HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 app = Flask(__name__)
@@ -129,7 +130,8 @@ DEFAULT_CONTROL_CONFIG = {
     "passage_seconds": 10.0,
     "cooldown_seconds": 2.0,
     "motion_consecutive_frames": 2,
-    "motion_pixel_threshold": 0.04,
+    "motion_pixel_threshold_min": 0.04,
+    "motion_pixel_threshold_max": 0.35,
     "camera_failure_retry_limit": 10,
     "yolo_poll_interval_ms": 300,
     "watchdog_pulse_interval_ms": 1000,
@@ -142,10 +144,11 @@ CONTROL_CONFIG_BOUNDS = {
     "passage_seconds":                   (1.0, 120.0),
     "cooldown_seconds":                  (0.5, 30.0),
     "motion_consecutive_frames":         (1, 30),
-    "motion_pixel_threshold":            (0.005, 0.5),
+    "motion_pixel_threshold_min":        (0.005, 0.5),
+    "motion_pixel_threshold_max":        (0.01, 1.0),
     "camera_failure_retry_limit":        (1, 100),
     "yolo_poll_interval_ms":             (50, 5000),
-    "watchdog_pulse_interval_ms":        (100, 10000),
+    "watchdog_pulse_interval_ms":        (100, 600000),
     "watchdog_pulse_width_ms":           (10, 5000),
 }
 
@@ -361,7 +364,7 @@ def apply_digital_zoom(frame, zoom):
     return cv2.resize(crop, (w, h), interpolation=cv2.INTER_LINEAR)
 
 
-def detect_motion_in_zone(fg_mask, zone_points, frame_shape, threshold):
+def detect_motion_in_zone(fg_mask, zone_points, frame_shape, threshold_min, threshold_max):
     mask = np.zeros(frame_shape[:2], dtype=np.uint8)
     cv2.fillPoly(mask, [np.array(zone_points, dtype=np.int32)], 255)
     zone_fg = cv2.bitwise_and(fg_mask, mask)
@@ -369,7 +372,9 @@ def detect_motion_in_zone(fg_mask, zone_points, frame_shape, threshold):
     if zone_area == 0:
         return False, 0.0
     ratio = cv2.countNonZero(zone_fg) / zone_area
-    return ratio >= threshold, ratio
+    # Within band: above min (not noise) AND below max (not sunlight/global change)
+    triggered = ratio >= threshold_min and ratio <= threshold_max
+    return triggered, ratio
 
 
 def create_picamera2_instance():
@@ -851,7 +856,8 @@ def detection_thread():
                 zid = zone["id"]
                 has_motion, pixel_ratio = detect_motion_in_zone(
                     fg_mask, zone["points"], frame.shape,
-                    cfg["motion_pixel_threshold"]
+                    cfg["motion_pixel_threshold_min"],
+                    cfg["motion_pixel_threshold_max"]
                 )
                 zone_pixel_pcts[zid] = round(pixel_ratio * 100, 2)
                 if zid not in motion_state:
