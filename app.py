@@ -39,7 +39,7 @@ except ImportError:
     GPIO_AVAILABLE = False
 
 # --- Configuration ---
-MODEL_PATH = os.getenv("MODEL_PATH", "/home/enigma/yolo26n_ncnn_fp16")
+MODEL_PATH = os.getenv("MODEL_PATH", "/home/enigma/yolo11n_saved_model/yolo11n_float32.tflite")
 FALLBACK_MODEL_PATH = "/home/enigma/yolo26n_256.onnx"
 IMGSZ = 256
 PERFORMANCE_MODE = True
@@ -1028,32 +1028,41 @@ def detection_thread():
         def scale_box(x1, y1, x2, y2):
             return int(x1 * sx), int(y1 * sy), int(x2 * sx), int(y2 * sy)
 
-        line_w = max(2, int(2 * min(sx, sy)))
-        font_scale = 0.5 * min(sx, sy)
+        line_w = max(1, int(1.2 * min(sx, sy)))
+        font_scale = 0.45 * min(sx, sy)
 
         if current_zones:
+            # 1. Zone Fills
             if DRAW_ZONE_FILL:
                 overlay = display.copy()
                 for zone in current_zones:
                     pts = scale_pts(np.array(zone["points"], dtype=np.int32))
-                    bgr = hex_to_bgr(zone.get("color", "#00e5ff"))
-                    alpha = 0.2 if zone["id"] in active_motion_zone_ids else 0.08
+                    bgr = hex_to_bgr(zone.get("color", DEFAULT_ZONE_COLOR))
+                    # Subtle but defined fill
+                    alpha = 0.22 if zone["id"] in active_motion_zone_ids else 0.12
                     cv2.fillPoly(overlay, [pts], bgr)
                     cv2.addWeighted(overlay, alpha, display, 1.0 - alpha, 0, display)
                     overlay = display.copy()
+
+            # 2. Zone Borders (Tight double-stroke for high definition)
             for zone in current_zones:
                 pts = scale_pts(np.array(zone["points"], dtype=np.int32))
-                bgr = hex_to_bgr(zone.get("color", "#00e5ff"))
-                cv2.polylines(display, [pts], True, bgr, line_w)
+                bgr = hex_to_bgr(zone.get("color", DEFAULT_ZONE_COLOR))
+
+                # Tight black outline for definition
+                cv2.polylines(display, [pts], True, (0, 0, 0), line_w + 1, lineType=cv2.LINE_AA)
+                # Skinny main colored line
+                cv2.polylines(display, [pts], True, bgr, line_w, lineType=cv2.LINE_AA)
+
                 name = zone.get("name", "")
                 if DRAW_BOX_LABELS and name:
                     (tw, th), _ = cv2.getTextSize(name, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
                     cx = int(np.mean(pts[:, 0])) - tw // 2
                     cy = int(np.mean(pts[:, 1])) + th // 2
                     cv2.putText(display, name, (cx, cy),
-                                cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), 4)
+                                cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), 4, lineType=cv2.LINE_AA)
                     cv2.putText(display, name, (cx, cy),
-                                cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 1)
+                                cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 1, lineType=cv2.LINE_AA)
 
         for box in persons_in_roi:
             x1, y1, x2, y2 = scale_box(*map(int, box.xyxy[0]))
