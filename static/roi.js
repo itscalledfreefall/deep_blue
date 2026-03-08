@@ -10,8 +10,8 @@
     var POLL_MS = 1500;
     var TOAST_MS = 2800;
     var PRESET_COLORS = [
-        '#00e5ff', '#00ff9d', '#ff3333', '#ffb700',
-        '#2563eb', '#e040fb', '#ff6d00', '#76ff03'
+        '#ffffff', '#a3a3a3', '#737373', '#ef4444',
+        '#22c55e', '#3b82f6', '#f59e0b', '#d946ef'
     ];
 
     /* ── DOM refs ───────────────────────────── */
@@ -48,6 +48,11 @@
     var settingsBody = document.getElementById('settings-body');
     var btnSaveSettings = document.getElementById('btn-save-settings');
     var settingsFeedback = document.getElementById('settings-feedback');
+    var cfgClearance = document.getElementById('cfg-clearance');
+    var cfgPassage = document.getElementById('cfg-passage');
+    var cfgCooldown = document.getElementById('cfg-cooldown');
+    var cfgMotionFrames = document.getElementById('cfg-motion-frames');
+    var cfgPedClear = document.getElementById('cfg-ped-clear');
     var cfgMotionMin = document.getElementById('cfg-motion-min');
     var cfgMotionMax = document.getElementById('cfg-motion-max');
     var cfgWdInterval = document.getElementById('cfg-wd-interval');
@@ -175,19 +180,22 @@
             ctx.fillStyle = hexToRgba(color, alpha);
             ctx.fill();
         }
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
-        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+        ctx.lineWidth = 2.2;
         ctx.stroke();
         ctx.strokeStyle = color;
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = 1.2;
         ctx.stroke();
         if (showDots) {
             for (var j = 0; j < points.length; j++) {
                 var c = v2c(points[j]);
                 ctx.beginPath();
-                ctx.arc(c[0], c[1], 4, 0, 6.283);
-                ctx.fillStyle = j === 0 ? '#ffb700' : '#fff';
+                ctx.arc(c[0], c[1], 3, 0, 6.283);
+                ctx.fillStyle = j === 0 ? '#ffffff' : '#ffffff';
                 ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
+                ctx.stroke();
             }
         }
     }
@@ -376,7 +384,7 @@
     function startAddZone() {
         editingZoneId = null;
         drawVerts = [];
-        selectedColor = PRESET_COLORS[allZones.length % PRESET_COLORS.length];
+        selectedColor = PRESET_COLORS[0];
         zoneNameInput.value = 'Zone ' + (allZones.length + 1);
         editorTitle.textContent = 'New Zone';
         selectZoneType('human');
@@ -469,6 +477,11 @@
         fetch('/api/control-config')
             .then(function (r) { return r.json(); })
             .then(function (cfg) {
+                cfgClearance.value = cfg.clearance_seconds;
+                cfgPassage.value = cfg.passage_seconds;
+                cfgCooldown.value = cfg.cooldown_seconds;
+                cfgMotionFrames.value = cfg.motion_consecutive_frames;
+                cfgPedClear.value = cfg.pedestrian_clear_consecutive_frames;
                 cfgMotionMin.value = (cfg.motion_pixel_threshold_min * 100).toFixed(1);
                 cfgMotionMax.value = (cfg.motion_pixel_threshold_max * 100).toFixed(0);
                 cfgWdInterval.value = (cfg.watchdog_pulse_interval_ms / 1000).toFixed(1);
@@ -481,34 +494,37 @@
     }
 
     btnSaveSettings.addEventListener('click', function () {
+        var clearance = parseFloat(cfgClearance.value);
+        var passage = parseFloat(cfgPassage.value);
+        var cooldown = parseFloat(cfgCooldown.value);
+        var motionFrames = parseInt(cfgMotionFrames.value, 10);
+        var pedClear = parseInt(cfgPedClear.value, 10);
         var minPct = parseFloat(cfgMotionMin.value);
         var maxPct = parseFloat(cfgMotionMax.value);
         var wdSec = parseFloat(cfgWdInterval.value);
-        if (isNaN(minPct) || minPct < 0.5 || minPct > 50) {
-            settingsFeedback.textContent = 'Motion min must be 0.5–50%';
-            settingsFeedback.className = 'settings-feedback err';
-            return;
-        }
-        if (isNaN(maxPct) || maxPct < 1 || maxPct > 100) {
-            settingsFeedback.textContent = 'Motion max must be 1–100%';
-            settingsFeedback.className = 'settings-feedback err';
-            return;
-        }
         if (minPct >= maxPct) {
-            settingsFeedback.textContent = 'Min must be less than max';
-            settingsFeedback.className = 'settings-feedback err';
-            return;
-        }
-        if (isNaN(wdSec) || wdSec < 0.1 || wdSec > 600) {
-            settingsFeedback.textContent = 'Watchdog interval must be 0.1–600 seconds';
+            settingsFeedback.textContent = 'Pixel min must be less than max';
             settingsFeedback.className = 'settings-feedback err';
             return;
         }
         var payload = {
+            clearance_seconds: clearance,
+            passage_seconds: passage,
+            cooldown_seconds: cooldown,
+            motion_consecutive_frames: motionFrames,
+            pedestrian_clear_consecutive_frames: pedClear,
             motion_pixel_threshold_min: minPct / 100,
             motion_pixel_threshold_max: maxPct / 100,
             watchdog_pulse_interval_ms: Math.round(wdSec * 1000)
         };
+        // NaN check
+        for (var k in payload) {
+            if (isNaN(payload[k])) {
+                settingsFeedback.textContent = 'Invalid value: ' + k;
+                settingsFeedback.className = 'settings-feedback err';
+                return;
+            }
+        }
         btnSaveSettings.disabled = true;
         btnSaveSettings.textContent = 'Saving…';
         fetch('/api/control-config', {

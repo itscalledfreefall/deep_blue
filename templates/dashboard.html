@@ -95,6 +95,16 @@
                 <div class="control-group" id="settings-panel">
                     <button type="button" id="settings-toggle" class="btn btn-primary w-full">Control Settings</button>
                     <div id="settings-body" class="settings-body" style="display:none">
+                        <label class="label">Clearance delay (s) <span class="label-hint">(wait before checking pedestrians)</span></label>
+                        <input id="cfg-clearance" type="number" class="zone-input" min="0" max="30" step="0.5">
+                        <label class="label">Passage duration (s) <span class="label-hint">(how long relay stays on)</span></label>
+                        <input id="cfg-passage" type="number" class="zone-input" min="1" max="120" step="0.5">
+                        <label class="label">Cooldown (s) <span class="label-hint">(ignore re-triggers after passage)</span></label>
+                        <input id="cfg-cooldown" type="number" class="zone-input" min="0.5" max="30" step="0.5">
+                        <label class="label">Motion consecutive frames <span class="label-hint">(anti-flicker)</span></label>
+                        <input id="cfg-motion-frames" type="number" class="zone-input" min="1" max="30" step="1">
+                        <label class="label">Pedestrian clear frames <span class="label-hint">(confirm no person)</span></label>
+                        <input id="cfg-ped-clear" type="number" class="zone-input" min="1" max="30" step="1">
                         <label class="label">Motion pixel min % <span class="label-hint">(ignore noise below this)</span></label>
                         <input id="cfg-motion-min" type="number" class="zone-input" min="0.5" max="50" step="0.5">
                         <label class="label">Motion pixel max % <span class="label-hint">(ignore sunlight/global above this)</span></label>
