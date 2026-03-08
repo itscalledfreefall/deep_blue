@@ -89,7 +89,7 @@ systemctl start deep-blue-web.service
 
 echo ""
 echo "=== Deployment Complete ==="
-echo "Wi-Fi SSID: Forklift_Safety_Unit_01"
+echo "Wi-Fi SSID: deepBlue"
 echo "Wi-Fi Pass: safety123"
 echo "Dashboard:  http://forklift.local  (or http://192.168.4.1)"
 echo "Login:      deepblue / matrix18"
