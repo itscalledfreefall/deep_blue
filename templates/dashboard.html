@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard · Deep Blue</title>
+    <title>Kontrol Paneli · Deep Blue</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 
@@ -20,31 +20,31 @@
         <header class="dash-header">
             <div class="flex items-center">
                 <h1>Deep Blue</h1>
-                <span class="header-sub">Monitoring</span>
+                <span class="header-sub">Canlı Yayın</span>
             </div>
 
             <div class="status-bar">
                 <div class="status-item">
-                    <span class="status-lbl">State</span>
-                    <span class="badge badge-state" id="status-state">IDLE</span>
+                    <span class="status-lbl">Durum</span>
+                    <span class="badge badge-state" id="status-state">BEKLEME</span>
                 </div>
                 <div class="status-item">
                     <span class="status-lbl">FPS</span>
                     <span class="status-val" id="status-fps">--</span>
                 </div>
                 <div class="status-item">
-                    <span class="status-lbl">Relay</span>
-                    <span class="badge badge-danger" id="status-relay">SAFE</span>
+                    <span class="status-lbl">Röle</span>
+                    <span class="badge badge-danger" id="status-relay">EMNİYET</span>
                 </div>
                 <div class="status-item">
                     <span class="status-lbl">YOLO</span>
-                    <span class="badge badge-dim" id="status-yolo">SLEEP</span>
+                    <span class="badge badge-dim" id="status-yolo">UYKU</span>
                 </div>
                 <div class="status-item">
-                    <span class="status-lbl">WDG</span>
+                    <span class="status-lbl">Watchdog</span>
                     <span class="badge badge-safe" id="status-watchdog">OK</span>
                 </div>
-                <a href="/logout" class="btn-logout">Logout</a>
+                <a href="/logout" class="btn-logout">Çıkış Yap</a>
             </div>
         </header>
 
@@ -54,11 +54,11 @@
             <!-- Video Panel -->
             <section class="video-panel" id="video-panel">
                 <div class="stream-wrap" id="stream-wrap">
-                    <img id="stream" src="/video_feed" alt="Live Feed">
+                    <img id="stream" src="/video_feed" alt="Canlı Görüntü">
                     <canvas id="roi-canvas"></canvas>
                 </div>
                 <div class="loader-overlay" id="loader">
-                    <span class="loader-text">CONNECTING…</span>
+                    <span class="loader-text">BAĞLANIYOR…</span>
                 </div>
             </section>
 
@@ -66,61 +66,77 @@
             <aside class="sidebar">
                 <!-- Zone List -->
                 <div class="control-group" id="zone-list-panel">
-                    <h3>Zones</h3>
+                    <h3>Alanlar</h3>
                     <div id="zone-warnings" class="zone-warnings"></div>
                     <div id="zone-list" class="zone-list"></div>
-                    <button id="btn-add-zone" class="btn btn-primary w-full">+ Add Zone</button>
+                    <button id="btn-add-zone" class="btn btn-primary w-full">+ Alan Çiz</button>
                 </div>
 
                 <!-- Zone Editor (hidden by default) -->
                 <div class="control-group" id="zone-editor" style="display:none">
-                    <h3 id="editor-title">New Zone</h3>
-                    <label class="label">Name</label>
-                    <input id="zone-name" type="text" class="zone-input" placeholder="e.g. Loading Bay" maxlength="24">
-                    <label class="label">Type</label>
+                    <h3 id="editor-title">Yeni Bölge</h3>
+                    <label class="label">Bölge Adı</label>
+                    <input id="zone-name" type="text" class="zone-input" placeholder="örn. Yükleme Alanı" maxlength="24">
+                    <label class="label">Bölge Türü</label>
                     <div id="zone-type-selector" class="zone-type-selector">
-                        <button type="button" class="zone-type-btn selected" data-type="human">Human</button>
-                        <button type="button" class="zone-type-btn" data-type="vehicle_road">Vehicle Road</button>
+                        <button type="button" class="zone-type-btn selected" data-type="human">Yaya</button>
+                        <button type="button" class="zone-type-btn" data-type="vehicle_road">Araç Yolu</button>
                     </div>
-                    <label class="label">Color</label>
+                    <label class="label">Renk</label>
                     <div id="color-swatches" class="color-swatches"></div>
                     <div class="btn-row" style="margin-top:.5rem">
-                        <button id="btn-undo" class="btn" disabled>Undo</button>
-                        <button id="btn-cancel-zone" class="btn btn-danger">Cancel</button>
+                        <button id="btn-undo" class="btn" disabled>Geri Al</button>
+                        <button id="btn-cancel-zone" class="btn btn-danger">İptal</button>
                     </div>
-                    <button id="btn-save-zone" class="btn btn-success w-full" disabled>Save Zone</button>
+                    <button id="btn-save-zone" class="btn btn-success w-full" disabled>Bölgeyi Kaydet</button>
                 </div>
 
                 <!-- Control Settings -->
                 <div class="control-group" id="settings-panel">
-                    <button type="button" id="settings-toggle" class="btn btn-primary w-full">Control Settings</button>
-                    <div id="settings-body" class="settings-body" style="display:none">
-                        <label class="label">Clearance delay (s) <span class="label-hint">(wait before checking pedestrians)</span></label>
+                    <button type="button" id="settings-toggle" class="btn btn-primary w-full">Kontrol Ayarları</button>
+                    <div id="settings-body" class="settings-body">
+                        <label class="label label-with-info">Temizleme Bekleme Süresi (sn)
+                            <span class="info-chip" tabindex="0" data-tooltip="Araç hareketi algılandıktan sonra sistemin yaya kontrolüne geçmeden önce beklediği süredir." title="Araç hareketi algılandıktan sonra sistemin yaya kontrolüne geçmeden önce beklediği süredir.">i</span>
+                        </label>
                         <input id="cfg-clearance" type="number" class="zone-input" min="0" max="30" step="0.5">
-                        <label class="label">Passage duration (s) <span class="label-hint">(how long relay stays on)</span></label>
+                        <label class="label label-with-info">Geçiş Süresi (sn)
+                            <span class="info-chip" tabindex="0" data-tooltip="Rölenin aktif kalıp araca geçiş verdiği toplam süredir." title="Rölenin aktif kalıp araca geçiş verdiği toplam süredir.">i</span>
+                        </label>
                         <input id="cfg-passage" type="number" class="zone-input" min="1" max="120" step="0.5">
-                        <label class="label">Cooldown (s) <span class="label-hint">(ignore re-triggers after passage)</span></label>
+                        <label class="label label-with-info">Soğuma Süresi (sn)
+                            <span class="info-chip" tabindex="0" data-tooltip="Geçiş tamamlandıktan sonra aynı hareketin tekrar tetik sayılmaması için beklenen süredir." title="Geçiş tamamlandıktan sonra aynı hareketin tekrar tetik sayılmaması için beklenen süredir.">i</span>
+                        </label>
                         <input id="cfg-cooldown" type="number" class="zone-input" min="0.5" max="30" step="0.5">
-                        <label class="label">Motion consecutive frames <span class="label-hint">(anti-flicker)</span></label>
+                        <label class="label label-with-info">Hareket Onay Kare Sayısı
+                            <span class="info-chip" tabindex="0" data-tooltip="Hareketin gerçek kabul edilmesi için arka arkaya algılanması gereken kare sayısıdır. Düşük değer daha hızlı tepki verir. Yüksek değer daha temkinli karar sağlar." title="Hareketin gerçek kabul edilmesi için arka arkaya algılanması gereken kare sayısıdır. Düşük değer daha hızlı tepki verir. Yüksek değer daha temkinli karar sağlar.">i</span>
+                        </label>
                         <input id="cfg-motion-frames" type="number" class="zone-input" min="1" max="30" step="1">
-                        <label class="label">Pedestrian clear frames <span class="label-hint">(confirm no person)</span></label>
+                        <label class="label label-with-info">Yaya Alanı Onay Karesi
+                            <span class="info-chip" tabindex="0" data-tooltip="Yaya alanının güvenle boş kabul edilmesi için gereken onay sayısını belirler. Düşük değer alanı daha hızlı boş kabul eder. Yüksek değer alanı boş kabul etmeden önce daha fazla doğrulama yapar." title="Yaya alanının güvenle boş kabul edilmesi için gereken onay sayısını belirler. Düşük değer alanı daha hızlı boş kabul eder. Yüksek değer alanı boş kabul etmeden önce daha fazla doğrulama yapar.">i</span>
+                        </label>
                         <input id="cfg-ped-clear" type="number" class="zone-input" min="1" max="30" step="1">
-                        <label class="label">Motion pixel min % <span class="label-hint">(ignore noise below this)</span></label>
+                        <label class="label label-with-info">Hareket Sensörü Piksel Alt Eşiği %
+                            <span class="info-chip" tabindex="0" data-tooltip="Bu oranın altındaki değişimler gürültü kabul edilir ve tetikleme için kullanılmaz." title="Bu oranın altındaki değişimler gürültü kabul edilir ve tetikleme için kullanılmaz.">i</span>
+                        </label>
                         <input id="cfg-motion-min" type="number" class="zone-input" min="0.5" max="50" step="0.5">
-                        <label class="label">Motion pixel max % <span class="label-hint">(ignore sunlight/global above this)</span></label>
+                        <label class="label label-with-info">Hareket Sensörü Piksel Üst Eşiği %
+                            <span class="info-chip" tabindex="0" data-tooltip="Bu oranın üstündeki yaygın değişimler genelde ışık veya tüm karedeki değişim sayılır, bu yüzden tetik dışı bırakılır." title="Bu oranın üstündeki yaygın değişimler genelde ışık veya tüm karedeki değişim sayılır, bu yüzden tetik dışı bırakılır.">i</span>
+                        </label>
                         <input id="cfg-motion-max" type="number" class="zone-input" min="1" max="100" step="1">
-                        <label class="label">Watchdog pulse interval (s)</label>
+                        <label class="label label-with-info">Watchdog Sinyal Aralığı (sn)
+                            <span class="info-chip" tabindex="0" data-tooltip="Watchdog rölesine gönderilen darbeler arasındaki süredir. Sistem canlılığını dış donanıma bu aralıkla bildirir." title="Watchdog rölesine gönderilen darbeler arasındaki süredir. Sistem canlılığını dış donanıma bu aralıkla bildirir.">i</span>
+                        </label>
                         <input id="cfg-wd-interval" type="number" class="zone-input" min="0.1" max="600" step="0.1">
-                        <button id="btn-save-settings" class="btn btn-success w-full" style="margin-top:.5rem">Save Settings</button>
+                        <button id="btn-save-settings" class="btn btn-success w-full" style="margin-top:.5rem">Ayarları Kaydet</button>
                         <div id="settings-feedback" class="settings-feedback"></div>
                     </div>
                 </div>
 
                 <div class="control-group" style="margin-top:auto">
                     <div id="draw-hint" class="draw-hint">
-                        <strong>EDIT MODE</strong><br>
-                        Click on the video to place vertices.<br>
-                        Minimum 3 points required.
+                        <strong>DÜZENLEME MODU</strong><br>
+                        Nokta eklemek için görüntüye tıklayın.<br>
+                        En az 3 nokta gerekli.
                     </div>
                 </div>
             </aside>

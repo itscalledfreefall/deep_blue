@@ -69,6 +69,23 @@
     var canvasDisplayHeight = 0;
     var settingsOpen = false;
 
+    var SETTING_LABELS = {
+        clearance_seconds: 'Temizleme bekleme süresi',
+        passage_seconds: 'Geçiş süresi',
+        cooldown_seconds: 'Soğuma süresi',
+        motion_consecutive_frames: 'Ardışık hareket kareleri',
+        pedestrian_clear_consecutive_frames: 'Yaya yok onay kareleri',
+        motion_pixel_threshold_min: 'Hareket sensörü piksel alt eşiği',
+        motion_pixel_threshold_max: 'Hareket sensörü piksel üst eşiği',
+        watchdog_pulse_interval_ms: 'Watchdog sinyal aralığı'
+    };
+
+    var FAULT_LABELS = {
+        model_load_failed: 'Model yüklenemedi',
+        camera_frame_loss: 'Kamera görüntüsü kesildi',
+        yolo_inference_failed: 'YOLO çıkarımı başarısız'
+    };
+
     /* ── Toast ──────────────────────────────── */
     function toast(msg, type) {
         var el = document.createElement('div');
@@ -221,7 +238,7 @@
     function renderZoneList() {
         zoneListEl.innerHTML = '';
         if (allZones.length === 0) {
-            zoneListEl.innerHTML = '<p style="font-size:.72rem;color:var(--text-dim)">No zones defined. Add one to start monitoring.</p>';
+            zoneListEl.innerHTML = '<p style="font-size:.72rem;color:var(--text-dim)">Henüz bölge tanımlı değil. İzlemeyi başlatmak için bir bölge ekleyin.</p>';
             return;
         }
         for (var i = 0; i < allZones.length; i++) {
@@ -230,7 +247,7 @@
                 item.className = 'zone-item';
                 var isRoad = zone.zone_type === 'vehicle_road';
                 var badgeClass = isRoad ? 'zone-type-badge zone-type-road' : 'zone-type-badge zone-type-human';
-                var badgeText = isRoad ? 'ROAD' : 'HUMAN';
+                var badgeText = isRoad ? 'ARAÇ' : 'YAYA';
                 var pixelSpan = isRoad
                     ? '<span class="zone-pixel-pct" data-zone-id="' + zone.id + '">--%</span>'
                     : '';
@@ -239,8 +256,8 @@
                     '<span class="zone-name">' + escapeHtml(zone.name) + '</span>' +
                     pixelSpan +
                     '<span class="' + badgeClass + '">' + badgeText + '</span>' +
-                    '<button class="zone-btn-edit" title="Edit">&#9998;</button>' +
-                    '<button class="zone-btn-del" title="Delete">&times;</button>';
+                    '<button class="zone-btn-edit" title="Düzenle">&#9998;</button>' +
+                    '<button class="zone-btn-del" title="Sil">&times;</button>';
                 item.querySelector('.zone-btn-edit').addEventListener('click', function () { editZone(zone.id); });
                 item.querySelector('.zone-btn-del').addEventListener('click', function () { deleteZone(zone.id); });
                 zoneListEl.appendChild(item);
@@ -271,13 +288,13 @@
         }
         var warnings = [];
         if (!hasRoad && allZones.length > 0) {
-            warnings.push('No vehicle road zone — motion trigger disabled.');
+            warnings.push('Araç yolu bölgesi yok. Hareket tetikleme devre dışı.');
         }
         if (!hasHuman && allZones.length > 0) {
-            warnings.push('No human zone — passage grant blocked (unsafe).');
+            warnings.push('Yaya bölgesi yok. Güvenlik için geçiş izni verilmez.');
         }
         if (allZones.length === 0) {
-            warnings.push('Add at least one human zone and one vehicle road zone.');
+            warnings.push('En az bir yaya bölgesi ve bir araç yolu bölgesi ekleyin.');
         }
         if (warnings.length > 0) {
             zoneWarningsEl.innerHTML = '';
@@ -336,9 +353,9 @@
             }
         }
         if (type === 'vehicle_road') {
-            hint.innerHTML = '<strong>EDIT MODE</strong><br>Draw a vehicle road zone.<br>Motion detection (camera-based) will be used.';
+            hint.innerHTML = '<strong>DÜZENLEME MODU</strong><br>Araç yolu bölgesini çizin.<br>Kamera tabanlı hareket algılama kullanılır.';
         } else {
-            hint.innerHTML = '<strong>EDIT MODE</strong><br>Click on the video to place vertices.<br>Minimum 3 points required.';
+            hint.innerHTML = '<strong>DÜZENLEME MODU</strong><br>Nokta eklemek için görüntüye tıklayın.<br>En az 3 nokta gerekli.';
         }
     }
 
@@ -385,8 +402,8 @@
         editingZoneId = null;
         drawVerts = [];
         selectedColor = PRESET_COLORS[0];
-        zoneNameInput.value = 'Zone ' + (allZones.length + 1);
-        editorTitle.textContent = 'New Zone';
+        zoneNameInput.value = 'Alan ' + (allZones.length + 1);
+        editorTitle.textContent = 'Yeni Bölge';
         selectZoneType('human');
         initColorSwatches();
         selectColorSwatch(selectedColor);
@@ -403,7 +420,7 @@
         drawVerts = zone.points.slice();
         selectedColor = zone.color;
         zoneNameInput.value = zone.name;
-        editorTitle.textContent = 'Edit Zone';
+        editorTitle.textContent = 'Bölgeyi Düzenle';
         selectZoneType(zone.zone_type || 'human');
         initColorSwatches();
         selectColorSwatch(selectedColor);
@@ -417,18 +434,18 @@
                 allZones = allZones.filter(function (z) { return z.id !== id; });
                 renderZoneList();
                 requestAnimationFrame(render);
-                toast('Zone deleted', 'ok');
+                toast('Bölge silindi', 'ok');
             })
-            .catch(function () { toast('Delete failed', 'err'); });
+            .catch(function () { toast('Silme işlemi başarısız', 'err'); });
     }
 
     function saveCurrentZone() {
-        var name = zoneNameInput.value.trim() || 'Unnamed';
+        var name = zoneNameInput.value.trim() || 'Adsız';
         if (drawVerts.length < 3) return;
         btnSaveZone.disabled = true;
-        btnSaveZone.textContent = 'Saving…';
+        btnSaveZone.textContent = 'Kaydediliyor…';
         var done = function () {
-            btnSaveZone.textContent = 'Save Zone';
+            btnSaveZone.textContent = 'Bölgeyi Kaydet';
             syncButtons();
         };
         if (editingZoneId) {
@@ -441,9 +458,9 @@
                 .then(function () {
                     loadZones();
                     showEditor(false);
-                    toast('Zone updated', 'ok');
+                    toast('Bölge güncellendi', 'ok');
                 })
-                .catch(function () { toast('Update failed', 'err'); })
+                .catch(function () { toast('Güncelleme başarısız', 'err'); })
                 .then(done);
         } else {
             fetch('/api/zones', {
@@ -454,23 +471,36 @@
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
                     if (data.ok === false) {
-                        toast(data.error || 'Failed', 'err');
+                        toast(data.error || 'İşlem başarısız', 'err');
                     } else {
                         loadZones();
                         showEditor(false);
-                        toast('Zone saved', 'ok');
+                        toast('Bölge kaydedildi', 'ok');
                     }
                 })
-                .catch(function () { toast('Save failed', 'err'); })
+                .catch(function () { toast('Kaydetme başarısız', 'err'); })
                 .then(done);
         }
     }
 
     /* ── Settings panel ───────────────────── */
+    function openSettingsPanel() {
+        settingsOpen = true;
+        settingsBody.classList.add('is-open');
+        loadSettings();
+    }
+
+    function closeSettingsPanel() {
+        settingsOpen = false;
+        settingsBody.classList.remove('is-open');
+    }
+
     settingsToggle.addEventListener('click', function () {
-        settingsOpen = !settingsOpen;
-        settingsBody.style.display = settingsOpen ? '' : 'none';
-        if (settingsOpen) loadSettings();
+        if (settingsOpen) {
+            closeSettingsPanel();
+        } else {
+            openSettingsPanel();
+        }
     });
 
     function loadSettings() {
@@ -488,7 +518,7 @@
                 settingsFeedback.textContent = '';
             })
             .catch(function () {
-                settingsFeedback.textContent = 'Failed to load settings.';
+                settingsFeedback.textContent = 'Ayarlar yüklenemedi.';
                 settingsFeedback.className = 'settings-feedback err';
             });
     }
@@ -503,7 +533,7 @@
         var maxPct = parseFloat(cfgMotionMax.value);
         var wdSec = parseFloat(cfgWdInterval.value);
         if (minPct >= maxPct) {
-            settingsFeedback.textContent = 'Pixel min must be less than max';
+            settingsFeedback.textContent = 'Alt piksel eşiği üst eşikten küçük olmalı.';
             settingsFeedback.className = 'settings-feedback err';
             return;
         }
@@ -520,13 +550,13 @@
         // NaN check
         for (var k in payload) {
             if (isNaN(payload[k])) {
-                settingsFeedback.textContent = 'Invalid value: ' + k;
+                settingsFeedback.textContent = 'Geçersiz değer: ' + (SETTING_LABELS[k] || k);
                 settingsFeedback.className = 'settings-feedback err';
                 return;
             }
         }
         btnSaveSettings.disabled = true;
-        btnSaveSettings.textContent = 'Saving…';
+        btnSaveSettings.textContent = 'Kaydediliyor…';
         fetch('/api/control-config', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -535,23 +565,26 @@
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (data.ok) {
-                    settingsFeedback.textContent = 'Saved.';
+                    settingsFeedback.textContent = 'Ayarlar kaydedildi.';
                     settingsFeedback.className = 'settings-feedback ok';
-                    toast('Settings saved', 'ok');
+                    toast('Ayarlar kaydedildi', 'ok');
+                    setTimeout(function () {
+                        closeSettingsPanel();
+                    }, 220);
                 } else {
-                    var msg = (data.errors || []).join('; ') || 'Validation failed';
+                    var msg = (data.errors || []).join('; ') || 'Doğrulama başarısız';
                     settingsFeedback.textContent = msg;
                     settingsFeedback.className = 'settings-feedback err';
-                    toast('Settings rejected', 'err');
+                    toast('Ayarlar reddedildi', 'err');
                 }
             })
             .catch(function () {
-                settingsFeedback.textContent = 'Network error.';
+                settingsFeedback.textContent = 'Ağ hatası.';
                 settingsFeedback.className = 'settings-feedback err';
             })
             .then(function () {
                 btnSaveSettings.disabled = false;
-                btnSaveSettings.textContent = 'Save Settings';
+                btnSaveSettings.textContent = 'Ayarları Kaydet';
             });
     });
 
@@ -579,13 +612,13 @@
 
     /* ── State display helpers ────────────── */
     var STATE_LABELS = {
-        'IDLE_SAFE': 'IDLE',
-        'ROAD_MOTION_TRIGGERED': 'MOTION',
-        'CLEARANCE_WAIT': 'CLEARING',
-        'PEDESTRIAN_HOLD': 'PED HOLD',
-        'TRAFFIC_PASSAGE_GRANTED': 'PASSAGE',
-        'RECOVERY_COOLDOWN': 'COOLDOWN',
-        'FAULT_SAFE': 'FAULT'
+        'IDLE_SAFE': 'BEKLEME',
+        'ROAD_MOTION_TRIGGERED': 'HAREKET',
+        'CLEARANCE_WAIT': 'ÖN BEKLEME',
+        'PEDESTRIAN_HOLD': 'YAYA VAR',
+        'TRAFFIC_PASSAGE_GRANTED': 'GEÇİŞ AÇIK',
+        'RECOVERY_COOLDOWN': 'SOĞUMA',
+        'FAULT_SAFE': 'ARIZA'
     };
 
     var STATE_BADGE_CLASS = {
@@ -609,10 +642,10 @@
 
                 // Relay
                 if (s.relay === 'ON') {
-                    elRelay.textContent = 'PASS';
+                    elRelay.textContent = 'GEÇİŞ';
                     elRelay.className = 'badge badge-safe';
                 } else {
-                    elRelay.textContent = 'SAFE';
+                    elRelay.textContent = 'EMNİYET';
                     elRelay.className = 'badge badge-danger';
                 }
 
@@ -623,10 +656,10 @@
 
                 // YOLO mode
                 if (s.yolo_mode === 'active') {
-                    elYolo.textContent = 'ACTIVE';
+                    elYolo.textContent = 'AKTİF';
                     elYolo.className = 'badge badge-safe';
                 } else {
-                    elYolo.textContent = 'SLEEP';
+                    elYolo.textContent = 'UYKU';
                     elYolo.className = 'badge badge-dim';
                 }
 
@@ -635,7 +668,7 @@
                     elWatchdog.textContent = 'OK';
                     elWatchdog.className = 'badge badge-safe';
                 } else {
-                    elWatchdog.textContent = 'FAIL';
+                    elWatchdog.textContent = 'HATA';
                     elWatchdog.className = 'badge badge-fault';
                 }
 
@@ -644,7 +677,7 @@
 
                 // Fault banner
                 if (s.fault_active && s.fault_reason) {
-                    faultText.textContent = 'FAULT: ' + s.fault_reason.replace(/_/g, ' ').toUpperCase();
+                    faultText.textContent = 'ARIZA: ' + (FAULT_LABELS[s.fault_reason] || s.fault_reason.replace(/_/g, ' '));
                     faultBanner.style.display = '';
                 } else {
                     faultBanner.style.display = 'none';

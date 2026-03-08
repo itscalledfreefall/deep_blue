@@ -152,6 +152,38 @@ CONTROL_CONFIG_BOUNDS = {
     "watchdog_pulse_width_ms":           (10, 5000),
 }
 
+CONTROL_CONFIG_LABELS_TR = {
+    "clearance_seconds": "Temizleme bekleme süresi",
+    "pedestrian_clear_consecutive_frames": "Yaya yok onay kareleri",
+    "passage_seconds": "Geçiş süresi",
+    "cooldown_seconds": "Soğuma süresi",
+    "motion_consecutive_frames": "Ardışık hareket kareleri",
+    "motion_pixel_threshold_min": "Hareket sensörü piksel alt eşiği",
+    "motion_pixel_threshold_max": "Hareket sensörü piksel üst eşiği",
+    "camera_failure_retry_limit": "Kamera hata tekrar sınırı",
+    "yolo_poll_interval_ms": "YOLO sorgu aralığı",
+    "watchdog_pulse_interval_ms": "Watchdog sinyal aralığı",
+    "watchdog_pulse_width_ms": "Watchdog darbe süresi",
+}
+
+OVERLAY_STATE_LABELS_TR = {
+    S_IDLE_SAFE: "BEKLEME",
+    S_ROAD_MOTION_TRIGGERED: "HAREKET",
+    S_CLEARANCE_WAIT: "ON BEKLEME",
+    S_PEDESTRIAN_HOLD: "YAYA VAR",
+    S_TRAFFIC_PASSAGE_GRANTED: "GECIS ACIK",
+    S_RECOVERY_COOLDOWN: "SOGUMA",
+    S_FAULT_SAFE: "ARIZA",
+}
+
+VEHICLE_LABELS_TR = {
+    "bicycle": "BISIKLET",
+    "car": "ARAC",
+    "motorcycle": "MOTOSIKLET",
+    "bus": "OTOBUS",
+    "truck": "KAMYON",
+}
+
 # --- Shared State ---
 lock = threading.Lock()
 latest_frame = None        # sub stream (640x480) for YOLO
@@ -219,7 +251,7 @@ def load_config():
             elif "roi" in data and data["roi"]:
                 zones = [{
                     "id": "z_legacy",
-                    "name": "Zone 1",
+                    "name": "Alan 1",
                     "color": DEFAULT_ZONE_COLOR,
                     "zone_type": "human",
                     "points": data["roi"]
@@ -249,16 +281,16 @@ def validate_control_config(incoming):
         val = incoming[key]
         if isinstance(lo, int) and isinstance(hi, int):
             if not isinstance(val, (int, float)):
-                errors.append(f"{key}: must be numeric")
+                errors.append(f"{CONTROL_CONFIG_LABELS_TR.get(key, key)} sayısal bir değer olmalı.")
                 continue
             val = int(val)
         else:
             if not isinstance(val, (int, float)):
-                errors.append(f"{key}: must be numeric")
+                errors.append(f"{CONTROL_CONFIG_LABELS_TR.get(key, key)} sayısal bir değer olmalı.")
                 continue
             val = float(val)
         if val < lo or val > hi:
-            errors.append(f"{key}: must be between {lo} and {hi}")
+            errors.append(f"{CONTROL_CONFIG_LABELS_TR.get(key, key)} {lo} ile {hi} arasında olmalı.")
             continue
         validated[key] = val
     return validated, errors
@@ -1069,7 +1101,7 @@ def detection_thread():
             conf = float(box.conf)
             cv2.rectangle(display, (x1, y1), (x2, y2), (0, 0, 255), line_w)
             if DRAW_BOX_LABELS:
-                cv2.putText(display, f"PERSON {conf:.0%}", (x1, y1 - 8),
+                cv2.putText(display, f"YAYA {conf:.0%}", (x1, y1 - 8),
                             cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), 2)
         if DRAW_OUTSIDE_BOXES:
             for box in persons_outside:
@@ -1080,7 +1112,7 @@ def detection_thread():
             x1, y1, x2, y2 = scale_box(*map(int, box.xyxy[0]))
             cls_id = int(box.cls)
             conf = float(box.conf)
-            label = VEHICLE_CLASSES.get(cls_id, "vehicle").upper()
+            label = VEHICLE_LABELS_TR.get(VEHICLE_CLASSES.get(cls_id, "vehicle"), "ARAC")
             cv2.rectangle(display, (x1, y1), (x2, y2), (0, 220, 255), line_w)
             if DRAW_BOX_LABELS:
                 cv2.putText(display, f"{label} {conf:.0%}", (x1, y1 - 8),
@@ -1091,9 +1123,9 @@ def detection_thread():
                 cv2.rectangle(display, (x1, y1), (x2, y2), (128, 128, 128), 1)
 
         # Status bar
-        state_short = controller_state["state"].replace("_", " ")
+        state_short = OVERLAY_STATE_LABELS_TR.get(controller_state["state"], controller_state["state"].replace("_", " "))
         relay_color = (0, 200, 0) if traffic_relay_active else (0, 0, 255)
-        relay_text = "PASS" if traffic_relay_active else "SAFE"
+        relay_text = "GECIS" if traffic_relay_active else "EMNIYET"
         status_text = f"{state_short} | {relay_text} | FPS:{fps:.1f}"
         if motion_zones_active > 0:
             status_text += f" M:{motion_zones_active}"
@@ -1161,7 +1193,7 @@ def login():
                 request.form.get("password") == PASSWORD):
             session["logged_in"] = True
             return redirect(url_for("dashboard"))
-        error = "Invalid credentials"
+        error = "Kullanıcı adı veya şifre hatalı."
     return render_template("login.html", error=error)
 
 
@@ -1195,14 +1227,14 @@ def get_zones():
 def add_zone():
     global zones
     if len(zones) >= MAX_ZONES:
-        return jsonify({"ok": False, "error": "Max 8 zones"}), 400
+        return jsonify({"ok": False, "error": "En fazla 8 bölge eklenebilir."}), 400
     data = request.get_json(force=True)
     zone_type = data.get("zone_type", "human")
     if zone_type not in ("human", "vehicle_road"):
         zone_type = "human"
     zone = {
         "id": data.get("id", f"z{int(time.time() * 1000)}"),
-        "name": data.get("name", f"Zone {len(zones) + 1}"),
+        "name": data.get("name", f"Alan {len(zones) + 1}"),
         "color": normalize_zone_color(data.get("color")),
         "zone_type": zone_type,
         "points": data.get("points", []),
@@ -1228,7 +1260,7 @@ def update_zone(zone_id):
                 z["points"] = data["points"]
             save_config()
             return jsonify({"ok": True, "zone": z})
-    return jsonify({"ok": False, "error": "not found"}), 404
+    return jsonify({"ok": False, "error": "Bölge bulunamadı."}), 404
 
 
 @app.route("/api/zones/<zone_id>", methods=["DELETE"])
@@ -1262,7 +1294,7 @@ def put_control_config():
     if errors:
         return jsonify({"ok": False, "errors": errors}), 400
     if not validated:
-        return jsonify({"ok": False, "errors": ["no valid fields provided"]}), 400
+        return jsonify({"ok": False, "errors": ["Geçerli bir ayar alanı gönderilmedi."]}), 400
     control_config.update(validated)
     save_config()
     return jsonify({"ok": True, "control_config": control_config})

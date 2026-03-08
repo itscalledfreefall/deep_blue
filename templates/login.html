@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login · Deep Blue</title>
+    <title>Giriş · Deep Blue</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 
@@ -13,7 +13,7 @@
     <div class="login-card">
         <div class="login-header">
             <h1>DEEP BLUE</h1>
-            <p>Safety System · Secure Access</p>
+            <p>Güvenlik Sistemi · Yetkili Erişim</p>
         </div>
 
         {% if error %}
@@ -21,21 +21,21 @@
         {% endif %}
 
         <form method="POST" action="/login">
-            <label class="label" for="username">Operator ID</label>
-            <input class="login-input" type="text" id="username" name="username" placeholder="Enter ID…" required
+            <label class="label" for="username">Operatör Kimliği</label>
+            <input class="login-input" type="text" id="username" name="username" placeholder="Kimliğinizi girin…" required
                 autofocus autocomplete="username">
 
-            <label class="label" for="password">Passcode</label>
+            <label class="label" for="password">Şifre</label>
             <input class="login-input" type="password" id="password" name="password" placeholder="••••••••" required
                 autocomplete="current-password">
 
             <button class="btn btn-primary login-submit" type="submit">
-                Authenticate
+                Giriş Yap
             </button>
         </form>
 
         <div class="login-footer">
-            System: <span class="online">ONLINE</span> · v2.4
+            Sistem: <span class="online">AKTİF</span> · v2.4
         </div>
     </div>
 
