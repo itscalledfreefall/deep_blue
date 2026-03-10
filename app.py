@@ -6,6 +6,8 @@ ROI zone drawing, GPIO relay control, watchdog heartbeat, and web login.
 """
 
 import json
+import logging
+import logging.handlers
 import os
 import re
 import signal
@@ -37,6 +39,52 @@ try:
     GPIO_AVAILABLE = True
 except ImportError:
     GPIO_AVAILABLE = False
+
+# --- Logging ---
+LOG_DIR = os.getenv("DEEP_BLUE_LOG_DIR", "/var/log/deep-blue")
+LOG_FILE = os.path.join(LOG_DIR, "deep-blue-web.log")
+LOG_FORMAT = "%(asctime)s %(levelname)-7s [%(threadName)s] %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+log = logging.getLogger("deep_blue")
+log.setLevel(logging.INFO)
+_formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+
+# Handler 1: stdout (captured by journald)
+_stream_handler = logging.StreamHandler(sys.stdout)
+_stream_handler.setFormatter(_formatter)
+log.addHandler(_stream_handler)
+
+# Handler 2: rotating file (10 MB x 3 backups)
+try:
+    os.makedirs(LOG_DIR, exist_ok=True)
+    _file_handler = logging.handlers.RotatingFileHandler(
+        LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=3
+    )
+    _file_handler.setFormatter(_formatter)
+    log.addHandler(_file_handler)
+except OSError:
+    log.warning("Cannot write to %s, file logging disabled", LOG_DIR)
+
+
+def _uncaught_main(exc_type, exc_value, exc_tb):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    log.critical("Uncaught exception in main thread", exc_info=(exc_type, exc_value, exc_tb))
+
+
+def _uncaught_thread(args):
+    if args.exc_type is SystemExit:
+        return
+    log.critical(
+        "Uncaught exception in thread %s", args.thread.name if args.thread else "?",
+        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+    )
+
+
+sys.excepthook = _uncaught_main
+threading.excepthook = _uncaught_thread
 
 # --- Configuration ---
 MODEL_PATH = os.getenv("MODEL_PATH", "/home/enigma/yolo11n_saved_model/yolo11n_float32.tflite")
@@ -96,7 +144,7 @@ DRAW_BOX_LABELS = not PERFORMANCE_MODE
 MJPEG_QUALITY = 72 if PERFORMANCE_MODE else 70
 MJPEG_STREAM_SLEEP = 0.03 if PERFORMANCE_MODE else 0.05
 PERSON_CLASS = 0
-VEHICLE_CLASSES = {1: "bicycle", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+YOLO_CLASS_FILTER = [PERSON_CLASS]
 TRAFFIC_RELAY_PIN = 23
 WATCHDOG_RELAY_PIN = 24
 # Camera-motion detection for vehicle_road zones
@@ -176,14 +224,6 @@ OVERLAY_STATE_LABELS_TR = {
     S_FAULT_SAFE: "ARIZA",
 }
 
-VEHICLE_LABELS_TR = {
-    "bicycle": "BISIKLET",
-    "car": "ARAC",
-    "motorcycle": "MOTOSIKLET",
-    "bus": "OTOBUS",
-    "truck": "KAMYON",
-}
-
 # --- Shared State ---
 lock = threading.Lock()
 latest_frame = None        # sub stream (640x480) for YOLO
@@ -206,7 +246,6 @@ controller_state = {
 status = {
     "fps": 0.0,
     "persons": 0,
-    "vehicles": 0,
     "motion_zones": 0,
     "relay": "OFF",
     "running": False,
@@ -217,7 +256,6 @@ status = {
     "fault_active": False,
     "fault_reason": None,
     "watchdog_ok": True,
-    "event_mode": "event_driven",
     "yolo_mode": "sleeping",
 }
 
@@ -230,10 +268,6 @@ bg_subtractor = cv2.createBackgroundSubtractorMOG2(
 motion_state = {}
 motion_frame_count = 0
 camera_reconnected = False
-
-# Watchdog state
-watchdog_last_pulse_ts = 0.0
-watchdog_ok = True
 
 
 def load_config():
@@ -316,14 +350,14 @@ traffic_relay_active = False
 
 def setup_gpio():
     if not GPIO_AVAILABLE:
-        print("WARNING: RPi.GPIO not available, relays disabled")
+        log.warning("RPi.GPIO not available, relays disabled")
         return
     GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
     GPIO.setup(TRAFFIC_RELAY_PIN, GPIO.OUT, initial=GPIO.HIGH)
     GPIO.setup(WATCHDOG_RELAY_PIN, GPIO.OUT, initial=GPIO.HIGH)
-    print(f"Traffic relay: BCM {TRAFFIC_RELAY_PIN} (active-low)")
-    print(f"Watchdog relay: BCM {WATCHDOG_RELAY_PIN} (active-low)")
+    log.info("Traffic relay: BCM %d (active-low)", TRAFFIC_RELAY_PIN)
+    log.info("Watchdog relay: BCM %d (active-low)", WATCHDOG_RELAY_PIN)
 
 
 def set_traffic_relay(active):
@@ -347,20 +381,16 @@ def watchdog_pulse():
 
 
 def watchdog_thread_fn():
-    global watchdog_last_pulse_ts, watchdog_ok
     while status["running"]:
         interval_s = control_config["watchdog_pulse_interval_ms"] / 1000.0
         try:
             watchdog_pulse()
-            watchdog_last_pulse_ts = time.time()
-            watchdog_ok = True
             status["watchdog_ok"] = True
         except Exception as e:
-            print(f"WARNING: watchdog pulse failed: {e}")
-            watchdog_ok = False
+            log.warning("Watchdog pulse failed: %s", e)
             status["watchdog_ok"] = False
         time.sleep(interval_s)
-    print("Watchdog thread stopped")
+    log.info("Watchdog thread stopped")
 
 
 # --- Camera helpers ---
@@ -416,23 +446,23 @@ def create_picamera2_instance():
         if os.path.exists(PICAMERA2_TUNING_FILE):
             try:
                 tuning = Picamera2.load_tuning_file(PICAMERA2_TUNING_FILE)
-                print(f"Picamera2 tuning file: {PICAMERA2_TUNING_FILE}")
+                log.info("Picamera2 tuning file: %s", PICAMERA2_TUNING_FILE)
                 return Picamera2(tuning=tuning)
             except Exception as e:
-                print(f"WARNING: failed to load tuning file {PICAMERA2_TUNING_FILE}: {e}")
+                log.warning("Failed to load tuning file %s: %s", PICAMERA2_TUNING_FILE, e)
         else:
-            print(f"WARNING: tuning file not found: {PICAMERA2_TUNING_FILE}")
+            log.warning("Tuning file not found: %s", PICAMERA2_TUNING_FILE)
     if PICAMERA2_USE_NOIR_TUNING:
         for path in PICAMERA2_NOIR_TUNING_CANDIDATES:
             if not os.path.exists(path):
                 continue
             try:
                 tuning = Picamera2.load_tuning_file(path)
-                print(f"Picamera2 tuning file: {path}")
+                log.info("Picamera2 tuning file: %s", path)
                 return Picamera2(tuning=tuning)
             except Exception as e:
-                print(f"WARNING: failed to load tuning file {path}: {e}")
-    print("Picamera2 tuning file: default")
+                log.warning("Failed to load tuning file %s: %s", path, e)
+    log.info("Picamera2 tuning file: default")
     return Picamera2()
 
 
@@ -469,7 +499,7 @@ def camera_thread_usb():
         cap.release()
         cap = cv2.VideoCapture(USB_CAMERA_INDEX)
     if not cap.isOpened():
-        print(f"ERROR: USB camera /dev/video{USB_CAMERA_INDEX} not available")
+        log.error("USB camera /dev/video%d not available", USB_CAMERA_INDEX)
         with lock:
             latest_frame = None
         return False
@@ -482,9 +512,9 @@ def camera_thread_usb():
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     actual_fourcc = decode_fourcc(cap.get(cv2.CAP_PROP_FOURCC))
-    print(
-        f"USB camera started: /dev/video{USB_CAMERA_INDEX} "
-        f"({actual_w}x{actual_h}, FOURCC={actual_fourcc})"
+    log.info(
+        "USB camera started: /dev/video%d (%dx%d, FOURCC=%s)",
+        USB_CAMERA_INDEX, actual_w, actual_h, actual_fourcc,
     )
     for _ in range(8):
         cap.read()
@@ -497,7 +527,7 @@ def camera_thread_usb():
         if not ok or bgr is None:
             read_failures += 1
             if read_failures >= CAMERA_MAX_READ_FAILURES:
-                print("WARNING: USB camera read failed repeatedly, restarting camera")
+                log.warning("USB camera read failed repeatedly, restarting camera")
                 restart_required = True
                 break
             time.sleep(0.02)
@@ -513,21 +543,21 @@ def camera_thread_usb():
         with lock:
             latest_frame = None
         return False
-    print("USB camera stopped")
+    log.info("USB camera stopped")
     return True
 
 
 def camera_thread_picamera2():
     global latest_frame, camera_reconnected
     if not PICAMERA2_AVAILABLE:
-        print(f"ERROR: Picamera2 is not available: {PICAMERA2_IMPORT_ERROR}")
+        log.error("Picamera2 is not available: %s", PICAMERA2_IMPORT_ERROR)
         with lock:
             latest_frame = None
         return False
     try:
         picam2 = create_picamera2_instance()
         if picam2 is None:
-            print(f"ERROR: Picamera2 is not available: {PICAMERA2_IMPORT_ERROR}")
+            log.error("Picamera2 is not available: %s", PICAMERA2_IMPORT_ERROR)
             with lock:
                 latest_frame = None
             return False
@@ -538,12 +568,12 @@ def camera_thread_picamera2():
         picam2.start()
         apply_camera_controls(picam2, CAMERA_DAY_CONTROLS)
     except Exception as e:
-        print(f"ERROR: Picamera2 start failed: {e}")
+        log.error("Picamera2 start failed: %s", e)
         with lock:
             latest_frame = None
         return False
     time.sleep(1)
-    print(f"Picamera2 started: {CAM_WIDTH}x{CAM_HEIGHT}")
+    log.info("Picamera2 started: %dx%d", CAM_WIDTH, CAM_HEIGHT)
     camera_reconnected = True
     restart_required = False
     read_failures = 0
@@ -553,7 +583,7 @@ def camera_thread_picamera2():
         except Exception:
             read_failures += 1
             if read_failures >= CAMERA_MAX_READ_FAILURES:
-                print("WARNING: Picamera2 capture failed repeatedly, restarting camera")
+                log.warning("Picamera2 capture failed repeatedly, restarting camera")
                 restart_required = True
                 break
             time.sleep(0.05)
@@ -576,7 +606,7 @@ def camera_thread_picamera2():
         with lock:
             latest_frame = None
         return False
-    print("Picamera2 stopped")
+    log.info("Picamera2 stopped")
     return True
 
 
@@ -586,22 +616,22 @@ def _ip_hd_reader():
     url = IP_CAMERA_URL_MAIN
     if not url:
         return
-    print(f"Connecting to IP camera HD stream: {url}")
+    log.info("Connecting to IP camera HD stream: %s", url)
     cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
     if not cap.isOpened():
-        print(f"WARNING: cannot open HD stream, live view will use sub stream")
+        log.warning("Cannot open HD stream, live view will use sub stream")
         return
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"IP camera HD stream started: {actual_w}x{actual_h}")
+    log.info("IP camera HD stream started: %dx%d", actual_w, actual_h)
     read_failures = 0
     while status["running"]:
         ok, bgr = cap.read()
         if not ok or bgr is None:
             read_failures += 1
             if read_failures >= CAMERA_MAX_READ_FAILURES:
-                print("WARNING: HD stream lost, live view falls back to sub stream")
+                log.warning("HD stream lost, live view falls back to sub stream")
                 break
             time.sleep(0.02)
             continue
@@ -612,31 +642,31 @@ def _ip_hd_reader():
     cap.release()
     with lock:
         latest_frame_hd = None
-    print("IP camera HD stream stopped")
+    log.info("IP camera HD stream stopped")
 
 
 def camera_thread_ip():
     global latest_frame, camera_reconnected
     url = IP_CAMERA_URL
     if not url:
-        print("ERROR: IP_CAMERA_URL not set")
+        log.error("IP_CAMERA_URL not set")
         with lock:
             latest_frame = None
         return False
     # Start HD stream reader in background
     hd_thread = threading.Thread(target=_ip_hd_reader, daemon=True)
     hd_thread.start()
-    print(f"Connecting to IP camera sub stream: {url}")
+    log.info("Connecting to IP camera sub stream: %s", url)
     cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
     if not cap.isOpened():
-        print(f"ERROR: cannot open IP camera stream: {url}")
+        log.error("Cannot open IP camera stream: %s", url)
         with lock:
             latest_frame = None
         return False
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"IP camera sub stream started: {actual_w}x{actual_h}")
+    log.info("IP camera sub stream started: %dx%d", actual_w, actual_h)
     camera_reconnected = True
     restart_required = False
     read_failures = 0
@@ -645,7 +675,7 @@ def camera_thread_ip():
         if not ok or bgr is None:
             read_failures += 1
             if read_failures >= CAMERA_MAX_READ_FAILURES:
-                print("WARNING: IP camera read failed repeatedly, reconnecting")
+                log.warning("IP camera read failed repeatedly, reconnecting")
                 restart_required = True
                 break
             time.sleep(0.02)
@@ -665,45 +695,45 @@ def camera_thread_ip():
         with lock:
             latest_frame = None
         return False
-    print("IP camera stopped")
+    log.info("IP camera stopped")
     return True
 
 
 def camera_thread():
     backend = CAMERA_BACKEND
     if backend not in {"auto", "usb", "picamera2", "ip"}:
-        print(f"WARNING: invalid CAMERA_BACKEND={backend}, using auto")
+        log.warning("Invalid CAMERA_BACKEND=%s, using auto", backend)
         backend = "auto"
-    print(f"Camera backend mode: {backend}")
+    log.info("Camera backend mode: %s", backend)
     while status["running"]:
         if backend == "ip":
             if camera_thread_ip():
                 return
-            print(f"WARNING: retrying IP camera in {IP_CAMERA_RECONNECT_DELAY:.1f}s")
+            log.warning("Retrying IP camera in %.1fs", IP_CAMERA_RECONNECT_DELAY)
             time.sleep(IP_CAMERA_RECONNECT_DELAY)
             continue
         if backend == "usb":
             if camera_thread_usb():
                 return
-            print(f"WARNING: retrying USB camera in {CAMERA_RETRY_DELAY:.1f}s")
+            log.warning("Retrying USB camera in %.1fs", CAMERA_RETRY_DELAY)
             time.sleep(CAMERA_RETRY_DELAY)
             continue
         if backend == "picamera2":
             if camera_thread_picamera2():
                 return
-            print(f"WARNING: retrying Picamera2 camera in {CAMERA_RETRY_DELAY:.1f}s")
+            log.warning("Retrying Picamera2 camera in %.1fs", CAMERA_RETRY_DELAY)
             time.sleep(CAMERA_RETRY_DELAY)
             continue
         if camera_thread_usb():
             return
         if not status["running"]:
             return
-        print("WARNING: USB camera unavailable, trying Picamera2")
+        log.warning("USB camera unavailable, trying Picamera2")
         if camera_thread_picamera2():
             return
         if not status["running"]:
             return
-        print(f"ERROR: no camera source available; retrying in {CAMERA_RETRY_DELAY:.1f}s")
+        log.error("No camera source available; retrying in %.1fs", CAMERA_RETRY_DELAY)
         time.sleep(CAMERA_RETRY_DELAY)
 
 
@@ -726,7 +756,7 @@ def transition_state(new_state, reason=None, trigger_zone=None):
 
 
 def enter_fault(reason):
-    print(f"FAULT: {reason}")
+    log.error("FAULT: %s", reason)
     set_traffic_relay(False)
     transition_state(S_FAULT_SAFE, reason=reason)
 
@@ -752,14 +782,6 @@ def classify_zones(current_zones):
     return human_zones, road_zones
 
 
-def check_zone_health(human_zones, road_zones):
-    if not road_zones:
-        return "no_vehicle_road_zone", "warning"
-    if not human_zones:
-        return "no_human_zone", "warning"
-    return None, None
-
-
 # --- Detection Thread (State Machine) ---
 def detection_thread():
     global annotated_frame, bg_subtractor, motion_frame_count, camera_reconnected
@@ -775,14 +797,14 @@ def detection_thread():
     def load_model_with_warmup(warmup_frame):
         candidates = model_candidates()
         if not candidates:
-            print("ERROR: no model candidates found")
+            log.error("No model candidates found")
             return None
         last_error = None
         for i, candidate in enumerate(candidates):
             if i == 0:
-                print(f"Loading model: {candidate}")
+                log.info("Loading model: %s", candidate)
             else:
-                print(f"Falling back to model: {candidate}")
+                log.info("Falling back to model: %s", candidate)
             try:
                 loaded_model = YOLO(candidate, task="detect")
                 if warmup_frame is not None:
@@ -791,8 +813,8 @@ def detection_thread():
                 return loaded_model
             except Exception as e:
                 last_error = e
-                print(f"WARNING: model init/warmup failed for '{candidate}': {e}")
-        print(f"ERROR: all model candidates failed: {last_error}")
+                log.warning("Model init/warmup failed for '%s': %s", candidate, e)
+        log.error("All model candidates failed: %s", last_error)
         return None
 
     def filter_by_roi(boxes, roi_contour):
@@ -821,7 +843,7 @@ def detection_thread():
         while status["running"]:
             time.sleep(0.5)
         return
-    print("YOLO warmup done")
+    log.info("YOLO warmup done")
 
     # Initialize state
     transition_state(S_IDLE_SAFE)
@@ -855,10 +877,6 @@ def detection_thread():
         now = t0
         current_zones = [z for z in zones if len(z.get("points", [])) >= 3]
         human_zones, road_zones = classify_zones(current_zones)
-
-        # Zone health check (warning only, no fault)
-        zone_issue, _ = check_zone_health(human_zones, road_zones)
-        status["zone_warning"] = zone_issue
 
         # Reset MOG2 on camera reconnect
         if camera_reconnected:
@@ -914,22 +932,23 @@ def detection_thread():
         # --- YOLO inference (conditional on state) ---
         cs = controller_state["state"]
         run_yolo = cs in (S_PEDESTRIAN_HOLD, S_CLEARANCE_WAIT)
-        # Also run in IDLE_SAFE if no road zones (legacy fallback: full-frame detection)
-        if cs == S_IDLE_SAFE and not road_zones and human_zones:
-            run_yolo = True
 
         persons_in_roi = []
         persons_outside = []
-        vehicles_in_roi = []
-        vehicles_outside = []
 
         if run_yolo:
             status["yolo_mode"] = "active"
             try:
-                results = model(frame, imgsz=IMGSZ, conf=CONF_THRESHOLD, verbose=False)
+                results = model(
+                    frame,
+                    imgsz=IMGSZ,
+                    conf=CONF_THRESHOLD,
+                    classes=YOLO_CLASS_FILTER,
+                    verbose=False,
+                )
                 consecutive_yolo_failures = 0
             except Exception as e:
-                print(f"WARNING: inference failed, reloading model: {e}")
+                log.warning("Inference failed, reloading model: %s", e)
                 consecutive_yolo_failures += 1
                 if consecutive_yolo_failures >= 3:
                     enter_fault("yolo_inference_failed")
@@ -952,26 +971,18 @@ def detection_thread():
 
             if results is not None:
                 all_persons = []
-                all_vehicles = []
                 for b in results[0].boxes:
-                    cls_id = int(b.cls)
-                    if cls_id == PERSON_CLASS:
+                    if int(b.cls) == PERSON_CLASS:
                         all_persons.append(b)
-                    elif cls_id in VEHICLE_CLASSES:
-                        all_vehicles.append(b)
 
                 persons_outside = list(all_persons)
-                vehicles_outside = list(all_vehicles)
                 if human_zones:
                     for zone in human_zones:
                         roi_contour = np.array(zone["points"], dtype=np.int32)
                         p_in, persons_outside = filter_by_roi(persons_outside, roi_contour)
                         persons_in_roi.extend(p_in)
-                        v_in, vehicles_outside = filter_by_roi(vehicles_outside, roi_contour)
-                        vehicles_in_roi.extend(v_in)
                 elif not current_zones:
                     persons_in_roi, persons_outside = all_persons, []
-                    vehicles_in_roi, vehicles_outside = all_vehicles, []
         else:
             status["yolo_mode"] = "sleeping"
 
@@ -988,11 +999,6 @@ def detection_thread():
                 event_counter += 1
                 controller_state["event_id"] = event_counter
                 transition_state(S_ROAD_MOTION_TRIGGERED, trigger_zone=triggering_zone_id)
-            elif not road_zones and human_zones and len(vehicles_in_roi) > 0 and not pedestrian_present:
-                # Legacy fallback: no road zones, vehicle detected in human zone
-                event_counter += 1
-                controller_state["event_id"] = event_counter
-                transition_state(S_ROAD_MOTION_TRIGGERED)
 
         elif cs == S_ROAD_MOTION_TRIGGERED:
             set_traffic_relay(False)
@@ -1108,20 +1114,6 @@ def detection_thread():
                 x1, y1, x2, y2 = scale_box(*map(int, box.xyxy[0]))
                 cv2.rectangle(display, (x1, y1), (x2, y2), (128, 128, 128), 1)
 
-        for box in vehicles_in_roi:
-            x1, y1, x2, y2 = scale_box(*map(int, box.xyxy[0]))
-            cls_id = int(box.cls)
-            conf = float(box.conf)
-            label = VEHICLE_LABELS_TR.get(VEHICLE_CLASSES.get(cls_id, "vehicle"), "ARAC")
-            cv2.rectangle(display, (x1, y1), (x2, y2), (0, 220, 255), line_w)
-            if DRAW_BOX_LABELS:
-                cv2.putText(display, f"{label} {conf:.0%}", (x1, y1 - 8),
-                            cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 220, 255), 2)
-        if DRAW_OUTSIDE_BOXES:
-            for box in vehicles_outside:
-                x1, y1, x2, y2 = scale_box(*map(int, box.xyxy[0]))
-                cv2.rectangle(display, (x1, y1), (x2, y2), (128, 128, 128), 1)
-
         # Status bar
         state_short = OVERLAY_STATE_LABELS_TR.get(controller_state["state"], controller_state["state"].replace("_", " "))
         relay_color = (0, 200, 0) if traffic_relay_active else (0, 0, 255)
@@ -1139,7 +1131,6 @@ def detection_thread():
 
         status["fps"] = round(fps, 1)
         status["persons"] = len(persons_in_roi)
-        status["vehicles"] = len(vehicles_in_roi)
         status["motion_zones"] = motion_zones_active
         status["zone_pixel_pcts"] = zone_pixel_pcts
 
@@ -1149,7 +1140,7 @@ def detection_thread():
             if yolo_sleep > 0:
                 time.sleep(yolo_sleep)
 
-    print("Detection stopped")
+    log.info("Detection stopped")
 
 
 # --- MJPEG Generator ---
@@ -1301,17 +1292,32 @@ def put_control_config():
 
 
 # --- Main ---
-def shutdown_handler(signum, frame):
-    status["running"] = False
+def _force_relays_safe():
+    """Force all relays to safe (inactive-HIGH) state."""
     if GPIO_AVAILABLE:
-        GPIO.output(TRAFFIC_RELAY_PIN, GPIO.HIGH)
-        GPIO.output(WATCHDOG_RELAY_PIN, GPIO.HIGH)
-        GPIO.cleanup()
-    print("Deep Blue Web shutting down...")
+        try:
+            GPIO.output(TRAFFIC_RELAY_PIN, GPIO.HIGH)
+            GPIO.output(WATCHDOG_RELAY_PIN, GPIO.HIGH)
+        except Exception:
+            pass
+
+
+def shutdown_handler(signum, frame):
+    sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else str(signum)
+    log.info("Received %s, shutting down...", sig_name)
+    status["running"] = False
+    _force_relays_safe()
+    if GPIO_AVAILABLE:
+        try:
+            GPIO.cleanup()
+        except Exception:
+            pass
+    log.info("Deep Blue Web stopped")
     sys.exit(0)
 
 
 if __name__ == "__main__":
+    log.info("Starting Deep Blue Web (PID %d)", os.getpid())
     load_config()
     setup_gpio()
     status["running"] = True
@@ -1319,12 +1325,12 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
 
-    cam_t = threading.Thread(target=camera_thread, daemon=True)
-    det_t = threading.Thread(target=detection_thread, daemon=True)
-    wd_t = threading.Thread(target=watchdog_thread_fn, daemon=True)
+    cam_t = threading.Thread(target=camera_thread, daemon=True, name="camera")
+    det_t = threading.Thread(target=detection_thread, daemon=True, name="detection")
+    wd_t = threading.Thread(target=watchdog_thread_fn, daemon=True, name="watchdog")
     cam_t.start()
     det_t.start()
     wd_t.start()
 
-    print("Starting Deep Blue Web on http://0.0.0.0:80")
+    log.info("Listening on http://0.0.0.0:80")
     app.run(host="0.0.0.0", port=80, threaded=True, debug=False)

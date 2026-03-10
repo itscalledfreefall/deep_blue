@@ -9,7 +9,12 @@ WorkingDirectory=/home/enigma/deep_blue_web
 ExecStart=/home/enigma/yolo-env2/bin/python /home/enigma/deep_blue_web/app.py
 Restart=always
 RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=10
 Environment=PYTHONUNBUFFERED=1
+LogsDirectory=deep-blue
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

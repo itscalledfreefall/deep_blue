@@ -58,13 +58,18 @@ if [ -f /etc/avahi/avahi-daemon.conf ]; then
 fi
 systemctl restart avahi-daemon 2>/dev/null || true
 
-# 7. Install systemd service
-echo "[7/8] Installing systemd service..."
+# 7. Install systemd service & create log directory
+echo "[7/9] Installing systemd service..."
 cp /home/enigma/deep_blue_web/deep-blue-web.service /etc/systemd/system/
 systemctl daemon-reload
 
+echo "[8/9] Creating log directory..."
+mkdir -p /var/log/deep-blue
+chown root:root /var/log/deep-blue
+chmod 755 /var/log/deep-blue
+
 # Disable old Deep Blue cron
-echo "[8/8] Disabling old Deep Blue autostart..."
+echo "[9/9] Disabling old Deep Blue autostart..."
 sudo -u enigma crontab -l 2>/dev/null | sed 's|^\(\* \* \* \* \* /home/enigma/deep_blue_start.sh\)|# \1|' | sudo -u enigma crontab -
 
 # Kill old deep_blue.py if running
